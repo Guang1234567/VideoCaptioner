@@ -93,8 +93,8 @@ class TaskCreationInterface(QWidget):
         self.task_card.setMinimumWidth(760)
         self.task_card.setMaximumWidth(860)
         self.task_layout = QVBoxLayout(self.task_card)
-        self.task_layout.setContentsMargins(34, 28, 34, 28)
-        self.task_layout.setSpacing(18)
+        self.task_layout.setContentsMargins(34, 22, 34, 24)
+        self.task_layout.setSpacing(14)
         self.setup_logo()
         title = BodyLabel(self.tr("创建字幕任务"), self.task_card)
         title.setAlignment(Qt.AlignCenter)  # type: ignore
@@ -105,8 +105,8 @@ class TaskCreationInterface(QWidget):
     def setup_logo(self):
         self.logo_label = ImageLabel(self)
         logo_pixmap = QPixmap(str(LOGO_PATH)).scaled(
-            150,
-            150,
+            112,
+            112,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.SmoothTransformation,  # type: ignore
         )

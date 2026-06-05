@@ -8,10 +8,10 @@ from qfluentwidgets import (
     InfoBadge,
     InfoBar,
     InfoLevel,
-    LargeTitleLabel,
     PrimaryPushButton,
     ScrollArea,
     SubtitleLabel,
+    TitleLabel,
 )
 from qfluentwidgets import FluentIcon as FIF
 
@@ -93,7 +93,7 @@ class CheckRow(CardWidget):
         super().__init__(parent)
         self.setObjectName("checkRow")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setContentsMargins(14, 8, 14, 8)
         layout.setSpacing(12)
         self.badge = StatusPill(check.status, self)
         textBox = QVBoxLayout()
@@ -122,7 +122,7 @@ class DoctorInterface(ScrollArea):
         self._auto_started = False
         self.scrollWidget = QWidget()
         self.pageLayout = QVBoxLayout(self.scrollWidget)
-        self.titleLabel = LargeTitleLabel(self.tr("诊断"), self)
+        self.titleLabel = TitleLabel(self.tr("诊断"), self)
         self.resultContainer = QWidget(self.scrollWidget)
         self.resultLayout = QVBoxLayout(self.resultContainer)
         self.resultLayout.setContentsMargins(0, 0, 0, 0)

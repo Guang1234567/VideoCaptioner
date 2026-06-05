@@ -16,10 +16,11 @@ from qfluentwidgets import (
     ComboBox,
     ExpandLayout,
     IconWidget,
+    InfoBadge,
     InfoBar,
+    InfoLevel,
     LargeTitleLabel,
     LineEdit,
-    PillPushButton,
     PrimaryPushButton,
     PushButton,
     ScrollArea,
@@ -44,31 +45,32 @@ from videocaptioner.ui.common.dubbing_options import (
 from videocaptioner.ui.thread.voice_preview_thread import VoicePreviewThread
 
 
-class MiniTag(PillPushButton):
+class MiniTag(InfoBadge):
     def __init__(self, text: str, parent=None):
         super().__init__(parent=parent)
         self.setText(text)
-        self.setCheckable(False)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)  # type: ignore
+        self.setLevel(InfoLevel.INFOAMTION)
         self.setFixedHeight(24)
-        self.setMinimumWidth(max(42, len(text) * 10 + 20))
+        self.setMinimumWidth(max(56, len(text) * 14 + 24))
         setFont(self, 11)
 
 
 class FieldRow(QWidget):
     def __init__(self, title: str, placeholder: str = "", parent=None, password: bool = False):
         super().__init__(parent)
-        layout = QVBoxLayout(self)
+        self.setMinimumHeight(38)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(10)
         self.label = CaptionLabel(title, self)
+        self.label.setFixedWidth(58)
         self.lineEdit = LineEdit(self)
         self.lineEdit.setPlaceholderText(placeholder)
         if password:
             self.lineEdit.setEchoMode(LineEdit.Password)
         self.lineEdit.setMinimumHeight(34)
         layout.addWidget(self.label)
-        layout.addWidget(self.lineEdit)
+        layout.addWidget(self.lineEdit, 1)
 
 
 class VoiceTile(CardWidget):
@@ -321,6 +323,7 @@ class DubbingInterface(ScrollArea):
         bodyLayout.setSpacing(18)
 
         self.voicePanel = QWidget(self.bodyPanel)
+        self.voicePanel.setMinimumWidth(560)
         voiceLayout = QVBoxLayout(self.voicePanel)
         voiceLayout.setContentsMargins(0, 0, 0, 0)
         voiceLayout.setSpacing(12)
@@ -338,6 +341,8 @@ class DubbingInterface(ScrollArea):
         voiceLayout.addWidget(self.voiceGridWidget)
 
         self.sidePanel = QWidget(self.bodyPanel)
+        self.sidePanel.setMinimumWidth(320)
+        self.sidePanel.setMaximumWidth(360)
         sideLayout = QVBoxLayout(self.sidePanel)
         sideLayout.setContentsMargins(0, 0, 0, 0)
         sideLayout.setSpacing(14)
@@ -379,9 +384,13 @@ class DubbingInterface(ScrollArea):
         presets = get_provider_voices(provider)
         current = cfg.dubbing_preset.value
         if current not in {voice.preset for voice in presets}:
-            self._apply_preset(presets[0].preset, show_tip=False)
+            preset = get_dubbing_preset(presets[0].preset)
+            cfg.set(cfg.dubbing_preset, presets[0].preset)
+            cfg.set(cfg.dubbing_voice, preset.voice)
+            cfg.set(cfg.dubbing_model, preset.model)
 
         self.configPanel.descLabel.setText(option.description)
+        self.configPanel.setMinimumHeight(236 if option.needs_api_key else 126)
         self.configPanel.keyField.setVisible(option.needs_api_key)
         self.configPanel.baseField.setVisible(option.needs_api_key)
         self.configPanel.modelLabel.setVisible(option.needs_api_key)
@@ -432,6 +441,11 @@ class DubbingInterface(ScrollArea):
             self.voiceGrid.addWidget(card, index // columns, index % columns)
             self.voice_cards.append(card)
         self._sync_current_panel()
+        self.voiceGridWidget.updateGeometry()
+        self.voicePanel.updateGeometry()
+        self.bodyPanel.updateGeometry()
+        self.scrollWidget.adjustSize()
+        self.viewport().update()
 
     def _sync_current_panel(self):
         current = cfg.dubbing_preset.value

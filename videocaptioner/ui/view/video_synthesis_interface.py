@@ -131,6 +131,8 @@ class OutputOptionCard(CardWidget):
         textBox.addWidget(self.titleLabel)
         textBox.addWidget(self.contentLabel)
         self.switchButton = SwitchButton(self)
+        self.switchButton.setOnText("")
+        self.switchButton.setOffText("")
         layout.addWidget(self.iconButton)
         layout.addLayout(textBox, 1)
         layout.addWidget(self.switchButton)
@@ -160,7 +162,7 @@ class VideoSynthesisInterface(QWidget):
             }
             CardWidget#outputOptionCard[checked="true"] {
                 border: 1px solid #3ccf91;
-                background: rgba(60, 207, 145, 0.13);
+                background: #26302a;
             }
             """
         )
