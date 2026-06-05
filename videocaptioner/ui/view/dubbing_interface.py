@@ -19,13 +19,13 @@ from qfluentwidgets import (
     InfoBadge,
     InfoBar,
     InfoLevel,
-    LargeTitleLabel,
     LineEdit,
     PrimaryPushButton,
     PushButton,
     ScrollArea,
     SegmentedWidget,
     SubtitleLabel,
+    TitleLabel,
     TransparentToolButton,
     setFont,
 )
@@ -50,9 +50,9 @@ class MiniTag(InfoBadge):
         super().__init__(parent=parent)
         self.setText(text)
         self.setLevel(InfoLevel.INFOAMTION)
-        self.setFixedHeight(24)
-        self.setMinimumWidth(max(56, len(text) * 14 + 24))
-        setFont(self, 11)
+        self.setFixedHeight(20)
+        self.setMinimumWidth(max(46, len(text) * 12 + 18))
+        setFont(self, 10)
 
 
 class FieldRow(QWidget):
@@ -79,19 +79,19 @@ class VoiceTile(CardWidget):
         self.voice = voice
         self.setObjectName("voiceTile")
         self.setCursor(Qt.PointingHandCursor)  # type: ignore
-        self.setMinimumHeight(132)
-        self.setMaximumHeight(150)
+        self.setMinimumHeight(116)
+        self.setMaximumHeight(128)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
 
         top = QHBoxLayout()
-        top.setSpacing(10)
+        top.setSpacing(8)
         self.avatar = IconWidget(self)
         self.avatar.setObjectName("voiceAvatar")
         self.avatar.setIcon(FIF.MICROPHONE)
-        self.avatar.setFixedSize(42, 42)
+        self.avatar.setFixedSize(34, 34)
         title_box = QVBoxLayout()
         title_box.setSpacing(2)
         self.titleLabel = BodyLabel(voice.title, self)
@@ -104,7 +104,7 @@ class VoiceTile(CardWidget):
         layout.addLayout(top)
 
         tag_row = QHBoxLayout()
-        tag_row.setSpacing(6)
+        tag_row.setSpacing(5)
         for tag in voice.tags[:3]:
             tag_row.addWidget(MiniTag(tag, self))
         tag_row.addStretch(1)
@@ -117,11 +117,14 @@ class VoiceTile(CardWidget):
         actions.setSpacing(8)
         self.previewButton = TransparentToolButton(FIF.PLAY, self)
         self.previewButton.setToolTip(self.tr("试听音色"))
-        self.previewButton.setFixedSize(34, 34)
+        self.previewButton.setFixedSize(32, 32)
         self.selectButton = PrimaryPushButton(self.tr("使用"), self)
-        self.selectButton.setFixedHeight(34)
+        self.selectButton.setFixedHeight(32)
+        self.selectButton.setMinimumWidth(88)
+        self.selectButton.setMaximumWidth(112)
         actions.addWidget(self.previewButton)
-        actions.addWidget(self.selectButton, 1)
+        actions.addStretch(1)
+        actions.addWidget(self.selectButton)
         layout.addLayout(actions)
 
     def setCurrent(self, current: bool):
@@ -145,8 +148,8 @@ class CurrentVoicePanel(CardWidget):
         self.setObjectName("currentVoicePanel")
         self.setMinimumWidth(300)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
 
         self.titleLabel = SubtitleLabel(self.tr("当前音色"), self)
         self.voiceLabel = BodyLabel("-", self)
@@ -155,9 +158,9 @@ class CurrentVoicePanel(CardWidget):
         self.tagWidget = QWidget(self)
         self.tagRow = QHBoxLayout(self.tagWidget)
         self.tagRow.setContentsMargins(0, 0, 0, 0)
-        self.tagRow.setSpacing(6)
+        self.tagRow.setSpacing(5)
         self.previewButton = PrimaryPushButton(FIF.PLAY, self.tr("试听当前"), self)
-        self.previewButton.setFixedHeight(34)
+        self.previewButton.setFixedHeight(32)
 
         layout.addWidget(self.titleLabel)
         layout.addWidget(self.voiceLabel)
@@ -265,7 +268,7 @@ class DubbingInterface(ScrollArea):
         self.player = QMediaPlayer(self)
         self.scrollWidget = QWidget()
         self.expandLayout = ExpandLayout(self.scrollWidget)
-        self.titleLabel = LargeTitleLabel(self.tr("配音"), self)
+        self.titleLabel = TitleLabel(self.tr("配音"), self)
         self.voice_cards: list[VoiceTile] = []
         self._active_preview_button: PushButton | TransparentToolButton | None = None
 
@@ -276,13 +279,13 @@ class DubbingInterface(ScrollArea):
     def _init_ui(self):
         self.resize(1000, 800)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore
-        self.setViewportMargins(0, 80, 0, 20)
+        self.setViewportMargins(0, 68, 0, 20)
         self.setWidget(self.scrollWidget)
         self.setWidgetResizable(True)
         self.setObjectName("dubbingInterface")
         self.scrollWidget.setObjectName("scrollWidget")
         self.titleLabel.setObjectName("settingLabel")
-        self.titleLabel.move(36, 30)
+        self.titleLabel.move(36, 26)
         self.setStyleSheet(
             """
             DubbingInterface, #scrollWidget { background-color: transparent; }
@@ -295,9 +298,9 @@ class DubbingInterface(ScrollArea):
 
         self.heroPanel = CardWidget(self.scrollWidget)
         self.heroPanel.setObjectName("heroPanel")
-        self.heroPanel.setMinimumHeight(78)
+        self.heroPanel.setMinimumHeight(64)
         heroLayout = QHBoxLayout(self.heroPanel)
-        heroLayout.setContentsMargins(18, 10, 18, 10)
+        heroLayout.setContentsMargins(16, 8, 16, 8)
         heroLayout.setSpacing(14)
         heroText = QVBoxLayout()
         heroText.setSpacing(2)
@@ -326,7 +329,7 @@ class DubbingInterface(ScrollArea):
         self.voicePanel.setMinimumWidth(560)
         self.voiceLayout = QVBoxLayout(self.voicePanel)
         self.voiceLayout.setContentsMargins(0, 0, 0, 0)
-        self.voiceLayout.setSpacing(12)
+        self.voiceLayout.setSpacing(10)
         voiceHeader = QHBoxLayout()
         voiceHeader.addWidget(BodyLabel(self.tr("可用音色"), self.voicePanel))
         voiceHeader.addStretch(1)
@@ -336,7 +339,7 @@ class DubbingInterface(ScrollArea):
         self.voiceGrid = QGridLayout(self.voiceGridWidget)
         self.voiceGrid.setContentsMargins(0, 0, 0, 0)
         self.voiceGrid.setHorizontalSpacing(12)
-        self.voiceGrid.setVerticalSpacing(12)
+        self.voiceGrid.setVerticalSpacing(10)
         self.voiceLayout.addLayout(voiceHeader)
         self.voiceLayout.addWidget(self.voiceGridWidget)
 
@@ -345,7 +348,7 @@ class DubbingInterface(ScrollArea):
         self.sidePanel.setMaximumWidth(360)
         sideLayout = QVBoxLayout(self.sidePanel)
         sideLayout.setContentsMargins(0, 0, 0, 0)
-        sideLayout.setSpacing(14)
+        sideLayout.setSpacing(12)
         self.currentPanel = CurrentVoicePanel(self.sidePanel)
         self.configPanel = ProviderConfigPanel(self.sidePanel)
         self.clonePanel = ClonePanel(self.sidePanel)
@@ -357,8 +360,8 @@ class DubbingInterface(ScrollArea):
         bodyLayout.addWidget(self.voicePanel, 5)
         bodyLayout.addWidget(self.sidePanel, 3)
 
-        self.expandLayout.setSpacing(18)
-        self.expandLayout.setContentsMargins(36, 10, 36, 0)
+        self.expandLayout.setSpacing(14)
+        self.expandLayout.setContentsMargins(36, 6, 36, 0)
         self.expandLayout.addWidget(self.heroPanel)
         self.expandLayout.addWidget(self.bodyPanel)
 
@@ -446,14 +449,14 @@ class DubbingInterface(ScrollArea):
         self.voiceGrid = QGridLayout(self.voiceGridWidget)
         self.voiceGrid.setContentsMargins(0, 0, 0, 0)
         self.voiceGrid.setHorizontalSpacing(12)
-        self.voiceGrid.setVerticalSpacing(12)
+        self.voiceGrid.setVerticalSpacing(10)
         self.voiceLayout.addWidget(self.voiceGridWidget)
         self.voice_cards = []
         voices = get_provider_voices(provider)
         self.voiceCountLabel.setText(self.tr("{count} 个音色").format(count=len(voices)))
         columns = 2
         rows = max(1, (len(voices) + columns - 1) // columns)
-        grid_height = rows * 146 + (rows - 1) * 12
+        grid_height = rows * 126 + (rows - 1) * 10
         content_height = grid_height + 42
         self.voiceGridWidget.setFixedHeight(grid_height)
         self.voicePanel.setFixedHeight(content_height)

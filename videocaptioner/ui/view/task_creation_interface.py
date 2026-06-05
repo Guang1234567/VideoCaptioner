@@ -80,8 +80,8 @@ class TaskCreationInterface(QWidget):
     def setup_ui(self):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setObjectName("main_layout")
-        self.main_layout.setSpacing(22)
-        self.main_layout.setContentsMargins(0, 86, 0, 16)
+        self.main_layout.setSpacing(18)
+        self.main_layout.setContentsMargins(0, 74, 0, 16)
         self.setup_task_card()
         self.setup_status_layout()
         self.main_layout.addStretch(1)
@@ -90,30 +90,40 @@ class TaskCreationInterface(QWidget):
     def setup_task_card(self):
         self.task_card = CardWidget(self)
         self.task_card.setObjectName("taskCard")
-        self.task_card.setMinimumWidth(760)
-        self.task_card.setMaximumWidth(860)
+        self.task_card.setMinimumWidth(720)
+        self.task_card.setMaximumWidth(820)
         self.task_layout = QVBoxLayout(self.task_card)
-        self.task_layout.setContentsMargins(34, 22, 34, 24)
-        self.task_layout.setSpacing(14)
+        self.task_layout.setContentsMargins(28, 18, 28, 20)
+        self.task_layout.setSpacing(12)
         self.setup_logo()
+        header = QHBoxLayout()
+        header.setSpacing(14)
+        header.addStretch(1)
+        header.addWidget(self.logo_label, 0, Qt.AlignVCenter)  # type: ignore
+        header_text = QVBoxLayout()
+        header_text.setSpacing(3)
         title = BodyLabel(self.tr("创建字幕任务"), self.task_card)
-        title.setAlignment(Qt.AlignCenter)  # type: ignore
-        self.task_layout.addWidget(title)
+        desc = CaptionLabel(self.tr("拖入媒体文件，或粘贴在线视频链接开始处理"), self.task_card)
+        header_text.addWidget(title)
+        header_text.addWidget(desc)
+        header.addLayout(header_text)
+        header.addStretch(1)
+        self.task_layout.addLayout(header)
         self.setup_search_layout()
         self.main_layout.addWidget(self.task_card, 0, Qt.AlignCenter)  # type: ignore
 
     def setup_logo(self):
         self.logo_label = ImageLabel(self)
         logo_pixmap = QPixmap(str(LOGO_PATH)).scaled(
-            112,
-            112,
+            72,
+            72,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.SmoothTransformation,  # type: ignore
         )
 
         self.logo_label.setPixmap(logo_pixmap)
         self.logo_label.setAlignment(Qt.AlignCenter)  # type: ignore
-        self.task_layout.addWidget(self.logo_label, 0, Qt.AlignCenter)  # type: ignore
+        self.logo_label.setFixedSize(72, 72)
 
     def setup_search_layout(self):
         self.search_layout = QHBoxLayout()
