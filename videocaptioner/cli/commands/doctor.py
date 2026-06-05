@@ -26,7 +26,7 @@ class Check:
 
 
 def run(args: Namespace, config: dict) -> int:
-    checks = _run_checks(config, check_api=bool(getattr(args, "check_api", False)))
+    checks = run_diagnostics(config, check_api=bool(getattr(args, "check_api", False)))
     if getattr(args, "json", False):
         print(json.dumps({"checks": [asdict(c) for c in checks]}, ensure_ascii=False, indent=2))
     else:
@@ -34,7 +34,7 @@ def run(args: Namespace, config: dict) -> int:
     return EXIT.DEPENDENCY_MISSING if any(c.status == "error" for c in checks) else EXIT.SUCCESS
 
 
-def _run_checks(config: dict, *, check_api: bool = False) -> list[Check]:
+def run_diagnostics(config: dict, *, check_api: bool = False) -> list[Check]:
     checks: list[Check] = []
     checks.append(_check_python())
     checks.append(_check_command("ffmpeg", "Required for audio extraction, timing fit, muxing, and hard subtitles."))

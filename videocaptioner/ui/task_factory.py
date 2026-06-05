@@ -278,25 +278,19 @@ class TaskFactory:
         return DubbingUIConfig(
             enabled=cfg.dubbing_enabled.value,
             preset=cfg.dubbing_preset.value,
-            provider=TaskFactory._provider_from_dubbing_preset(cfg.dubbing_preset.value),
+            provider=cfg.dubbing_provider.value,
             api_key=cfg.dubbing_api_key.value,
             api_base=cfg.dubbing_api_base.value,
             model=cfg.dubbing_model.value,
             voice=cfg.dubbing_voice.value,
             text_track=cfg.dubbing_text_track.value,
-            timing=cfg.dubbing_timing.value,
-            audio_mode=cfg.dubbing_audio_mode.value,
+            timing="balanced",
+            audio_mode="replace",
             tts_workers=cfg.dubbing_tts_workers.value,
-            use_cache=cfg.dubbing_use_cache.value,
+            use_cache=cfg.cache_enabled.value,
+            clone_audio_path=cfg.dubbing_clone_audio.value,
+            clone_audio_text=cfg.dubbing_clone_text.value,
         )
-
-    @staticmethod
-    def _provider_from_dubbing_preset(preset: str) -> str:
-        if preset.startswith("siliconflow"):
-            return "siliconflow"
-        if preset.startswith("gemini"):
-            return "gemini"
-        return "edge"
 
     @staticmethod
     def create_transcript_and_subtitle_task(

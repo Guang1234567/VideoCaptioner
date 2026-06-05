@@ -14,9 +14,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from qfluentwidgets import (
-    BodyLabel,
     CaptionLabel,
-    CardWidget,
     ComboBox,
     FluentIcon,
     HyperlinkButton,
@@ -108,19 +106,15 @@ class TaskCreationInterface(QWidget):
         self.main_layout.addLayout(self.search_layout)
 
     def setup_target_layout(self):
-        self.target_card = CardWidget(self)
-        target_layout = QHBoxLayout(self.target_card)
-        target_layout.setContentsMargins(16, 10, 16, 10)
-        target_layout.setSpacing(12)
+        target_container = QWidget(self)
+        target_layout = QHBoxLayout(target_container)
+        target_layout.setContentsMargins(80, 0, 80, 0)
+        target_layout.setSpacing(8)
 
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
-        title = BodyLabel(self.tr("输出目标"), self.target_card)
-        self.target_hint = CaptionLabel("", self.target_card)
-        text_layout.addWidget(title)
-        text_layout.addWidget(self.target_hint)
+        title = CaptionLabel(self.tr("默认输出"), target_container)
+        self.target_hint = CaptionLabel("", target_container)
 
-        self.target_combo = ComboBox(self.target_card)
+        self.target_combo = ComboBox(target_container)
         self.target_combo.addItems(
             [
                 self.tr("中文字幕 + 中文配音"),
@@ -128,11 +122,12 @@ class TaskCreationInterface(QWidget):
                 self.tr("中文配音视频"),
             ]
         )
-        self.target_combo.setMinimumWidth(190)
+        self.target_combo.setMinimumWidth(170)
 
-        target_layout.addLayout(text_layout, 1)
+        target_layout.addWidget(title)
         target_layout.addWidget(self.target_combo)
-        self.main_layout.addWidget(self.target_card)
+        target_layout.addWidget(self.target_hint, 1)
+        self.main_layout.addWidget(target_container)
 
     def setup_status_layout(self):
         self.status_layout = QVBoxLayout()

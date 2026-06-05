@@ -253,6 +253,12 @@ class Config(QConfig):
 
     # ------------------- 配音配置 -------------------
     dubbing_enabled = ConfigItem("Dubbing", "Enabled", False, BoolValidator())
+    dubbing_provider = OptionsConfigItem(
+        "Dubbing",
+        "Provider",
+        "edge",
+        OptionsValidator(["edge", "gemini", "siliconflow"]),
+    )
     dubbing_preset = OptionsConfigItem(
         "Dubbing",
         "Preset",
@@ -297,7 +303,8 @@ class Config(QConfig):
     dubbing_tts_workers = RangeConfigItem(
         "Dubbing", "Workers", 5, RangeValidator(1, 20)
     )
-    dubbing_use_cache = ConfigItem("Dubbing", "UseCache", True, BoolValidator())
+    dubbing_clone_audio = ConfigItem("Dubbing", "CloneAudio", "")
+    dubbing_clone_text = ConfigItem("Dubbing", "CloneText", "")
 
     # ------------------- 字幕样式配置 -------------------
     subtitle_style_name = ConfigItem("SubtitleStyle", "StyleName", "default")

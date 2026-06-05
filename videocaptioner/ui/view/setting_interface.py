@@ -39,6 +39,11 @@ from videocaptioner.core.speech import (
 )
 from videocaptioner.core.utils.cache import disable_cache, enable_cache
 from videocaptioner.ui.common.config import cfg
+from videocaptioner.ui.common.dubbing_options import (
+    get_provider_option,
+    get_provider_titles,
+    get_provider_voices,
+)
 from videocaptioner.ui.common.signal_bus import signalBus
 from videocaptioner.ui.components.EditComboBoxSettingCard import EditComboBoxSettingCard
 from videocaptioner.ui.components.LineEditSettingCard import LineEditSettingCard
@@ -167,6 +172,14 @@ class SettingInterface(ScrollArea):
         )
 
         # 配音配置卡片
+        self.dubbingProviderCard = ComboBoxSettingCard(
+            cfg.dubbing_provider,
+            FIF.ROBOT,
+            self.tr("配音提供商"),
+            self.tr("Edge 免费免 Key；Gemini 和 SiliconFlow 需要 API Key"),
+            texts=get_provider_titles(),
+            parent=self.dubbingGroup,
+        )
         self.dubbingEnabledCard = SwitchSettingCard(
             FIF.VOLUME,
             self.tr("默认添加配音"),
@@ -203,11 +216,7 @@ class SettingInterface(ScrollArea):
             FIF.ROBOT,  # type: ignore
             self.tr("配音模型"),
             self.tr("Gemini 或 SiliconFlow 使用的文字转语音模型；Edge 会自动使用 edge-tts"),
-            [
-                "FunAudioLLM/CosyVoice2-0.5B",
-                "gemini-3.1-flash-tts-preview",
-                "gemini-2.5-flash-preview-tts",
-            ],
+            [],
             self.dubbingGroup,
         )
         self.checkDubbingConnectionCard = PushSettingCard(
@@ -223,13 +232,6 @@ class SettingInterface(ScrollArea):
             self.tr("配音并发"),
             self.tr("同时合成的字幕行数，默认 5"),
             parent=self.dubbingGroup,
-        )
-        self.dubbingCacheCard = SwitchSettingCard(
-            FIF.HISTORY,
-            self.tr("配音缓存"),
-            self.tr("相同字幕和音色会复用已经生成的音频"),
-            cfg.dubbing_use_cache,
-            self.dubbingGroup,
         )
 
         # 保存配置卡片
@@ -321,14 +323,14 @@ class SettingInterface(ScrollArea):
         self.subtitleGroup.addSettingCard(self.softSubtitleCard)
         self.subtitleGroup.addSettingCard(self.videoQualityCard)
 
-        self.dubbingGroup.addSettingCard(self.dubbingEnabledCard)
+        self.dubbingGroup.addSettingCard(self.dubbingProviderCard)
         self.dubbingGroup.addSettingCard(self.dubbingPresetCard)
         self.dubbingGroup.addSettingCard(self.dubbingApiKeyCard)
         self.dubbingGroup.addSettingCard(self.dubbingApiBaseCard)
         self.dubbingGroup.addSettingCard(self.dubbingModelCard)
         self.dubbingGroup.addSettingCard(self.checkDubbingConnectionCard)
         self.dubbingGroup.addSettingCard(self.dubbingWorkersCard)
-        self.dubbingGroup.addSettingCard(self.dubbingCacheCard)
+        self.dubbingGroup.addSettingCard(self.dubbingEnabledCard)
 
         self.saveGroup.addSettingCard(self.savePathCard)
         self.saveGroup.addSettingCard(self.cacheEnabledCard)
@@ -659,7 +661,7 @@ class SettingInterface(ScrollArea):
         )
 
         # 初始化配音配置卡片的显示状态
-        self.__onDubbingPresetChanged(self.dubbingPresetCard.comboBox.currentText())
+        self.__onDubbingProviderChanged(self.dubbingProviderCard.comboBox.currentText())
 
         self.setStyleSheet(
             """
@@ -738,6 +740,9 @@ class SettingInterface(ScrollArea):
         self.checkWhisperConnectionCard.clicked.connect(self.checkWhisperConnection)
 
         # 配音配置
+        self.dubbingProviderCard.comboBox.currentTextChanged.connect(
+            self.__onDubbingProviderChanged
+        )
         self.dubbingPresetCard.comboBox.currentTextChanged.connect(
             self.__onDubbingPresetChanged
         )
@@ -999,6 +1004,22 @@ class SettingInterface(ScrollArea):
         self.transcribeGroup.adjustSize()
         self.expandLayout.update()
 
+    def __onDubbingProviderChanged(self, provider: str):
+        """处理配音提供商切换事件"""
+        option = get_provider_option(provider)
+        presets = [voice.preset for voice in get_provider_voices(provider)]
+        self.dubbingPresetCard.comboBox.blockSignals(True)
+        self.dubbingPresetCard.comboBox.clear()
+        self.dubbingPresetCard.comboBox.addItems(presets)
+        self.dubbingModelCard.setItems(list(option.models))
+        current = cfg.dubbing_preset.value
+        self.dubbingPresetCard.comboBox.setCurrentText(
+            current if current in presets else presets[0]
+        )
+        self.dubbingPresetCard.comboBox.blockSignals(False)
+        cfg.set(cfg.dubbing_provider, provider)
+        self.__onDubbingPresetChanged(self.dubbingPresetCard.comboBox.currentText())
+
     def __onDubbingPresetChanged(self, preset_name: str):
         """处理配音预设切换事件"""
         try:
@@ -1006,19 +1027,19 @@ class SettingInterface(ScrollArea):
         except ValueError:
             return
 
+        cfg.set(cfg.dubbing_provider, preset.provider)
         cfg.set(cfg.dubbing_voice, preset.voice)
         cfg.set(cfg.dubbing_model, preset.model)
         self.dubbingModelCard.comboBox.setCurrentText(preset.model)
 
         provider = preset.provider
-        needs_api = provider in {"gemini", "siliconflow"}
+        option = get_provider_option(provider)
+        needs_api = option.needs_api_key
         if needs_api:
             if not self.dubbingApiBaseCard.lineEdit.text().strip():
-                self.dubbingApiBaseCard.lineEdit.setText(preset.api_base)
+                self.dubbingApiBaseCard.lineEdit.setText(preset.api_base or option.default_base)
             self.dubbingPresetCard.setContent(
-                self.tr("当前使用 {provider}，需要填写配音 API Key。").format(
-                    provider=provider
-                )
+                self.tr("当前使用 {provider}，需要填写配音 API Key。").format(provider=option.title)
             )
             self.checkDubbingConnectionCard.setContent(
                 self.tr("合成一句试听音频，验证音色、API Key、Base URL 和模型是否可用")

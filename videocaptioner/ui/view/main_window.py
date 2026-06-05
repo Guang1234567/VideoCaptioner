@@ -22,6 +22,8 @@ from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.components.DonateDialog import DonateDialog
 from videocaptioner.ui.thread.version_checker_thread import VersionChecker
 from videocaptioner.ui.view.batch_process_interface import BatchProcessInterface
+from videocaptioner.ui.view.doctor_interface import DoctorInterface
+from videocaptioner.ui.view.dubbing_interface import DubbingInterface
 from videocaptioner.ui.view.home_interface import HomeInterface
 from videocaptioner.ui.view.llm_logs_interface import LLMLogsInterface
 from videocaptioner.ui.view.setting_interface import SettingInterface
@@ -39,6 +41,8 @@ class MainWindow(FluentWindow):
         self.homeInterface = HomeInterface(self)
         self.settingInterface = SettingInterface(self)
         self.subtitleStyleInterface = SubtitleStyleInterface(self)
+        self.dubbingInterface = DubbingInterface(self)
+        self.doctorInterface = DoctorInterface(self)
         self.batchProcessInterface = BatchProcessInterface(self)
         self.llmLogsInterface = LLMLogsInterface(self)
 
@@ -68,7 +72,9 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.homeInterface, FIF.HOME, self.tr("主页"))
         self.addSubInterface(self.batchProcessInterface, FIF.VIDEO, self.tr("批量处理"))
         self.addSubInterface(self.subtitleStyleInterface, FIF.FONT, self.tr("字幕样式"))
+        self.addSubInterface(self.dubbingInterface, FIF.VOLUME, self.tr("配音"))
         self.addSubInterface(self.llmLogsInterface, FIF.HISTORY, self.tr("请求日志"))
+        self.addSubInterface(self.doctorInterface, FIF.SEARCH, self.tr("诊断"))
 
         self.navigationInterface.addSeparator()
 
