@@ -43,6 +43,7 @@ from videocaptioner.ui.common.dubbing_options import (
     get_provider_option,
     get_provider_titles,
     get_provider_voices,
+    is_provider_default_base,
 )
 from videocaptioner.ui.common.signal_bus import signalBus
 from videocaptioner.ui.components.EditComboBoxSettingCard import EditComboBoxSettingCard
@@ -1036,8 +1037,9 @@ class SettingInterface(ScrollArea):
         option = get_provider_option(provider)
         needs_api = option.needs_api_key
         if needs_api:
-            if not self.dubbingApiBaseCard.lineEdit.text().strip():
+            if is_provider_default_base(self.dubbingApiBaseCard.lineEdit.text().strip()):
                 self.dubbingApiBaseCard.lineEdit.setText(preset.api_base or option.default_base)
+                self.dubbingApiBaseCard.lineEdit.setCursorPosition(0)
             self.dubbingPresetCard.setContent(
                 self.tr("当前使用 {provider}，需要填写配音 API Key。").format(provider=option.title)
             )

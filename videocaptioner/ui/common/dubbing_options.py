@@ -81,6 +81,10 @@ def get_provider_titles() -> list[str]:
     return [option.key for option in DUBBING_PROVIDERS]
 
 
+def is_provider_default_base(value: str) -> bool:
+    return value in {"", *(option.default_base for option in DUBBING_PROVIDERS)}
+
+
 def get_provider_voices(provider: str) -> tuple[DubbingVoiceOption, ...]:
     return DUBBING_VOICES.get(provider, DUBBING_VOICES["edge"])
 

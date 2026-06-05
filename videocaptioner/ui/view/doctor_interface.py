@@ -42,6 +42,7 @@ class DoctorInterface(ScrollArea):
         self.pageLayout = QVBoxLayout(self.scrollWidget)
         self.titleLabel = QLabel(self.tr("诊断"), self)
         self.summaryLabel = BodyLabel(self.tr("检查依赖、下载、转录、LLM、翻译和配音配置"), self.scrollWidget)
+        self.introCard = CardWidget(self.scrollWidget)
         self.resultContainer = QWidget(self.scrollWidget)
         self.resultLayout = QVBoxLayout(self.resultContainer)
         self.resultLayout.setContentsMargins(0, 0, 0, 0)
@@ -76,9 +77,27 @@ class DoctorInterface(ScrollArea):
         toolbarLayout.addWidget(self.runButton)
         toolbarLayout.addWidget(self.deepRunButton)
 
+        introLayout = QVBoxLayout(self.introCard)
+        introLayout.setContentsMargins(16, 14, 16, 14)
+        introLayout.setSpacing(8)
+        introLayout.addWidget(BodyLabel(self.tr("开始前可以先做一次诊断"), self.introCard))
+        introLayout.addWidget(
+            CaptionLabel(
+                self.tr("普通诊断检查 Python、FFmpeg、yt-dlp、配置文件、转录、字幕处理和配音参数。"),
+                self.introCard,
+            )
+        )
+        introLayout.addWidget(
+            CaptionLabel(
+                self.tr("深度诊断会在普通诊断基础上尝试真实 API 检查，可能产生少量调用。"),
+                self.introCard,
+            )
+        )
+
         self.pageLayout.setSpacing(18)
         self.pageLayout.setContentsMargins(36, 10, 36, 0)
         self.pageLayout.addWidget(toolbar)
+        self.pageLayout.addWidget(self.introCard)
         self.pageLayout.addWidget(self.resultContainer)
         self.pageLayout.addStretch(1)
         self.runButton.clicked.connect(lambda: self._run(False))
@@ -88,6 +107,7 @@ class DoctorInterface(ScrollArea):
         if self.thread and self.thread.isRunning():
             return
         self._clear_results()
+        self.introCard.hide()
         self.resultLayout.addWidget(self._message_card(self.tr("正在检查"), self.tr("正在检查本机依赖和当前配置...")))
         self.resultContainer.adjustSize()
         self.pageLayout.invalidate()

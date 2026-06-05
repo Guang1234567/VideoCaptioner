@@ -29,6 +29,7 @@ from videocaptioner.ui.common.dubbing_options import (
     get_provider_option,
     get_provider_voices,
     get_voice_title,
+    is_provider_default_base,
 )
 from videocaptioner.ui.components.EditComboBoxSettingCard import EditComboBoxSettingCard
 from videocaptioner.ui.components.LineEditSettingCard import LineEditSettingCard
@@ -43,10 +44,13 @@ class VoiceCard(CardWidget):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(8)
 
+        titleRow = QHBoxLayout()
         self.titleLabel = BodyLabel(title, self)
+        self.stateLabel = CaptionLabel("", self)
+        titleRow.addWidget(self.titleLabel, 1)
+        titleRow.addWidget(self.stateLabel, 0, Qt.AlignRight)  # type: ignore
         self.descLabel = CaptionLabel(desc, self)
         self.descLabel.setWordWrap(True)
-        self.stateLabel = CaptionLabel("", self)
         actions = QHBoxLayout()
         actions.setSpacing(8)
         self.playButton = PushButton(self.tr("试听"), self)
@@ -56,15 +60,14 @@ class VoiceCard(CardWidget):
         actions.addWidget(self.playButton, 1)
         actions.addWidget(self.useButton, 1)
 
-        layout.addWidget(self.titleLabel)
+        layout.addLayout(titleRow)
         layout.addWidget(self.descLabel)
         layout.addStretch(1)
-        layout.addWidget(self.stateLabel)
         layout.addLayout(actions)
         self.setMinimumHeight(136)
 
     def setCurrent(self, current: bool):
-        self.stateLabel.setText(self.tr("当前音色") if current else "")
+        self.stateLabel.setText(self.tr("当前") if current else "")
         self.useButton.setText(self.tr("已选择") if current else self.tr("使用"))
         self.useButton.setEnabled(not current)
 
@@ -137,7 +140,7 @@ class DubbingInterface(ScrollArea):
         )
 
         self.providerPanel = CardWidget(self.scrollWidget)
-        self.providerPanel.setMinimumHeight(118)
+        self.providerPanel.setMinimumHeight(96)
         providerLayout = QVBoxLayout(self.providerPanel)
         providerLayout.setContentsMargins(18, 14, 18, 14)
         providerLayout.setSpacing(10)
@@ -153,7 +156,7 @@ class DubbingInterface(ScrollArea):
         providerLayout.addWidget(self.providerTitleLabel)
         providerLayout.addWidget(self.providerDescLabel)
 
-        self.configGroup = SettingCardGroup(self.tr("连接配置"), self.scrollWidget)
+        self.configGroup = SettingCardGroup(self.tr("当前配置"), self.scrollWidget)
         self.apiKeyCard = LineEditSettingCard(
             cfg.dubbing_api_key,
             FIF.FINGERPRINT,
@@ -214,12 +217,24 @@ class DubbingInterface(ScrollArea):
         self.voiceGrid.setSpacing(12)
         voiceLayout.addWidget(self.voicePanel)
 
-        self.expandLayout.setSpacing(28)
+        self.bodyPanel = QWidget(self.scrollWidget)
+        bodyLayout = QHBoxLayout(self.bodyPanel)
+        bodyLayout.setContentsMargins(0, 0, 0, 0)
+        bodyLayout.setSpacing(18)
+        self.sidePanel = QWidget(self.bodyPanel)
+        sideLayout = QVBoxLayout(self.sidePanel)
+        sideLayout.setContentsMargins(0, 0, 0, 0)
+        sideLayout.setSpacing(18)
+        sideLayout.addWidget(self.configGroup)
+        sideLayout.addWidget(self.cloneGroup)
+        sideLayout.addStretch(1)
+        bodyLayout.addWidget(self.voiceGroup, 3)
+        bodyLayout.addWidget(self.sidePanel, 2)
+
+        self.expandLayout.setSpacing(18)
         self.expandLayout.setContentsMargins(36, 10, 36, 0)
         self.expandLayout.addWidget(self.providerPanel)
-        self.expandLayout.addWidget(self.voiceGroup)
-        self.expandLayout.addWidget(self.cloneGroup)
-        self.expandLayout.addWidget(self.configGroup)
+        self.expandLayout.addWidget(self.bodyPanel)
 
     def _connect_signals(self):
         self.testCard.clicked.connect(self._preview_current)
@@ -244,6 +259,13 @@ class DubbingInterface(ScrollArea):
 
         needs_api = option.needs_api_key
         self.configGroup.setVisible(True)
+        self.apiKeyCard.setContent(
+            self.tr("{provider} 必填，用于连接文字转语音服务").format(provider=option.title)
+            if needs_api
+            else self.tr("Edge 免费音色不需要 API Key")
+        )
+        self.apiBaseCard.setContent(self.tr("{provider} 的接口地址").format(provider=option.title))
+        self.modelCard.setContent(self.tr("{provider} 使用的文字转语音模型").format(provider=option.title))
         self.apiKeyCard.setVisible(needs_api)
         self.apiBaseCard.setVisible(needs_api)
         self.modelCard.setVisible(needs_api)
@@ -251,13 +273,19 @@ class DubbingInterface(ScrollArea):
         self.modelCard.setItems(list(option.models))
         if not cfg.dubbing_model.value and option.models:
             cfg.set(cfg.dubbing_model, option.models[0])
-        if not cfg.dubbing_api_base.value and option.default_base:
+        if not option.default_base and is_provider_default_base(cfg.dubbing_api_base.value):
+            cfg.set(cfg.dubbing_api_base, "")
+            self.apiBaseCard.lineEdit.setText("")
+        elif option.default_base and is_provider_default_base(cfg.dubbing_api_base.value):
             cfg.set(cfg.dubbing_api_base, option.default_base)
+            self.apiBaseCard.lineEdit.setText(option.default_base)
+            self.apiBaseCard.lineEdit.setCursorPosition(0)
         self.cloneGroup.setVisible(option.supports_clone)
         self._render_voice_cards(provider)
         self.configGroup.adjustSize()
         self.cloneGroup.adjustSize()
         self.voiceGroup.adjustSize()
+        self.bodyPanel.adjustSize()
         self.expandLayout.update()
 
     def _render_voice_cards(self, provider: str):

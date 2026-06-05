@@ -111,9 +111,6 @@ class TaskCreationInterface(QWidget):
         target_layout.setContentsMargins(80, 0, 80, 0)
         target_layout.setSpacing(8)
 
-        title = CaptionLabel(self.tr("默认输出"), target_container)
-        self.target_hint = CaptionLabel("", target_container)
-
         self.target_combo = ComboBox(target_container)
         self.target_combo.addItems(
             [
@@ -122,11 +119,13 @@ class TaskCreationInterface(QWidget):
                 self.tr("中文配音视频"),
             ]
         )
-        self.target_combo.setMinimumWidth(170)
+        self.target_combo.setMinimumWidth(188)
+        self.target_combo.setFixedHeight(34)
 
-        target_layout.addWidget(title)
+        target_layout.addStretch(1)
+        target_layout.addWidget(CaptionLabel(self.tr("输出"), target_container))
         target_layout.addWidget(self.target_combo)
-        target_layout.addWidget(self.target_hint, 1)
+        target_layout.addStretch(1)
         self.main_layout.addWidget(target_container)
 
     def setup_status_layout(self):
@@ -195,11 +194,13 @@ class TaskCreationInterface(QWidget):
         signalBus.dubbing_enabled_changed.emit(add_dubbing)
 
         if add_subtitle and add_dubbing:
-            self.target_hint.setText(self.tr("外语视频会输出中文字幕，并生成中文配音成片。"))
+            hint = self.tr("输出中文字幕视频，并生成中文配音。")
         elif add_subtitle:
-            self.target_hint.setText(self.tr("外语视频会输出中文字幕视频。"))
+            hint = self.tr("只输出中文字幕视频。")
         else:
-            self.target_hint.setText(self.tr("外语视频会输出中文配音视频，并保留配音音频。"))
+            hint = self.tr("只输出中文配音视频和配音音频。")
+        self.target_combo.setToolTip(hint)
+        self.status_label.setText(hint)
 
     def on_start_clicked(self):
         if self._start_mode == "browse":

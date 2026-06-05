@@ -250,18 +250,18 @@ class VideoSynthesisInterface(QWidget):
         """设置顶部命令栏"""
         self.add_subtitle_action = Action(
             FIF.FONT,
-            self.tr("添加字幕"),
+            self.tr("字幕：开"),
             triggered=self.on_add_subtitle_action_triggered,
-            checkable=True,
+            checkable=False,
         )
         self.add_subtitle_action.setToolTip(self.tr("把字幕合成到视频里"))
         self.command_bar.addAction(self.add_subtitle_action)
 
         self.add_dubbing_action = Action(
             FIF.VOLUME,
-            self.tr("添加配音"),
+            self.tr("配音：开"),
             triggered=self.on_add_dubbing_action_triggered,
-            checkable=True,
+            checkable=False,
         )
         self.add_dubbing_action.setToolTip(self.tr("生成配音音轨并合入视频"))
         self.command_bar.addAction(self.add_dubbing_action)
@@ -376,10 +376,9 @@ class VideoSynthesisInterface(QWidget):
         # 设置样式相关初始值
         self.use_style_action.setChecked(cfg.use_subtitle_style.value)
         self.render_mode_button.setText(cfg.subtitle_render_mode.value.value)
-        self.add_subtitle_action.setChecked(cfg.need_video.value)
-        self.add_dubbing_action.setChecked(cfg.dubbing_enabled.value)
         self.dubbing_preset_card.setCurrentKey(cfg.dubbing_preset.value)
         self.text_track_card.setCurrentKey(cfg.dubbing_text_track.value)
+        self._update_output_action_text()
         self._update_synthesis_controls_state()
         self._update_dubbing_controls_state()
         self._update_input_requirements()
@@ -453,7 +452,7 @@ class VideoSynthesisInterface(QWidget):
     def on_need_video_action_triggered(self, checked: bool):
         """处理视频合成按钮点击（更新配置+显示InfoBar）"""
         cfg.set(cfg.need_video, checked)
-        self.add_subtitle_action.setChecked(checked)
+        self._update_output_action_text()
         self._update_synthesis_controls_state()
         self._update_start_button_text()
         self._update_input_requirements()
@@ -479,26 +478,28 @@ class VideoSynthesisInterface(QWidget):
     def on_need_video_changed(self, checked: bool):
         """处理外部视频合成配置变更（仅更新UI状态）"""
         self.need_video_action.setChecked(checked)
-        self.add_subtitle_action.setChecked(checked)
+        self._update_output_action_text()
         self._update_synthesis_controls_state()
         self._update_input_requirements()
 
-    def on_add_subtitle_action_triggered(self, checked: bool):
+    def on_add_subtitle_action_triggered(self):
+        checked = not cfg.need_video.value
         cfg.set(cfg.need_video, checked)
         self.need_video_action.setChecked(checked)
-        self.add_subtitle_action.setChecked(checked)
+        self._update_output_action_text()
         self._update_synthesis_controls_state()
         self._update_start_button_text()
         self._update_input_requirements()
 
-    def on_add_dubbing_action_triggered(self, checked: bool):
+    def on_add_dubbing_action_triggered(self):
+        checked = not cfg.dubbing_enabled.value
         cfg.set(cfg.dubbing_enabled, checked)
-        self.add_dubbing_action.setChecked(checked)
+        self._update_output_action_text()
         self._update_dubbing_controls_state()
         self._update_input_requirements()
 
     def on_dubbing_enabled_changed(self, checked: bool):
-        self.add_dubbing_action.setChecked(checked)
+        self._update_output_action_text()
         self._update_dubbing_controls_state()
         self._update_input_requirements()
 
@@ -570,7 +571,7 @@ class VideoSynthesisInterface(QWidget):
 
     def _update_synthesis_controls_state(self):
         """更新所有合成相关控件的启用/禁用状态"""
-        need_video = self.add_subtitle_action.isChecked()
+        need_video = cfg.need_video.value
 
         # 合成视频关闭时，禁用所有相关选项
         self.soft_subtitle_action.setEnabled(need_video)
@@ -582,19 +583,27 @@ class VideoSynthesisInterface(QWidget):
 
     def _update_style_controls_state(self):
         """更新样式相关控件的启用/禁用状态"""
-        need_video = self.add_subtitle_action.isChecked()
+        need_video = cfg.need_video.value
         use_style = self.use_style_action.isChecked()
         # 渲染模式按钮：需要合成视频开启 且 使用样式开启
         self.render_mode_button.setEnabled(need_video and use_style)
 
     def _update_dubbing_controls_state(self):
-        enabled = self.add_dubbing_action.isChecked()
+        enabled = cfg.dubbing_enabled.value
         self.dubbing_card.setVisible(enabled)
         self._update_start_button_text()
 
+    def _update_output_action_text(self):
+        self.add_subtitle_action.setText(
+            self.tr("字幕：开") if cfg.need_video.value else self.tr("字幕：关")
+        )
+        self.add_dubbing_action.setText(
+            self.tr("配音：开") if cfg.dubbing_enabled.value else self.tr("配音：关")
+        )
+
     def _update_start_button_text(self):
-        add_subtitle = self.add_subtitle_action.isChecked()
-        add_dubbing = self.add_dubbing_action.isChecked()
+        add_subtitle = cfg.need_video.value
+        add_dubbing = cfg.dubbing_enabled.value
         if add_subtitle and add_dubbing:
             self.synthesize_button.setText(self.tr("生成成片"))
         elif add_dubbing:
@@ -606,8 +615,8 @@ class VideoSynthesisInterface(QWidget):
             self.synthesize_button.setText(self.tr("开始合成"))
 
     def _update_input_requirements(self):
-        add_subtitle = self.add_subtitle_action.isChecked()
-        add_dubbing = self.add_dubbing_action.isChecked()
+        add_subtitle = cfg.need_video.value
+        add_dubbing = cfg.dubbing_enabled.value
 
         if add_subtitle and add_dubbing:
             self.video_label.setText(self.tr("视频文件"))
@@ -632,8 +641,8 @@ class VideoSynthesisInterface(QWidget):
         )
 
     def _current_mode_text(self) -> str:
-        add_subtitle = self.add_subtitle_action.isChecked()
-        add_dubbing = self.add_dubbing_action.isChecked()
+        add_subtitle = cfg.need_video.value
+        add_dubbing = cfg.dubbing_enabled.value
         has_video = bool(self.video_input.text().strip())
         if add_subtitle and add_dubbing:
             return self.tr("字幕 + 配音成片")
@@ -646,8 +655,8 @@ class VideoSynthesisInterface(QWidget):
         return self.tr("未选择输出")
 
     def _planned_outputs_text(self) -> str:
-        add_subtitle = self.add_subtitle_action.isChecked()
-        add_dubbing = self.add_dubbing_action.isChecked()
+        add_subtitle = cfg.need_video.value
+        add_dubbing = cfg.dubbing_enabled.value
         has_video = bool(self.video_input.text().strip())
         if add_subtitle and add_dubbing:
             return self.tr("最终成片视频 + 配音音频")
@@ -833,7 +842,7 @@ class VideoSynthesisInterface(QWidget):
                 parent=self,
             )
             return None
-        if not video_file and self.add_subtitle_action.isChecked():
+        if not video_file and cfg.need_video.value:
             InfoBar.error(
                 self.tr("错误"),
                 self.tr("生成视频时需要选择视频文件"),
@@ -890,8 +899,8 @@ class VideoSynthesisInterface(QWidget):
         self.start_output_generation(need_create_task=False)
 
     def start_output_generation(self, need_create_task=True):
-        add_subtitle = self.add_subtitle_action.isChecked()
-        add_dubbing = self.add_dubbing_action.isChecked()
+        add_subtitle = cfg.need_video.value
+        add_dubbing = cfg.dubbing_enabled.value
         if not self._validate_before_generation(add_subtitle, add_dubbing):
             return
 
