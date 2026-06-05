@@ -39,6 +39,7 @@ dependencies = [
     "psutil>=7.0.0",
     "GPUtil>=1.4.0",
     "edge-tts>=7.2.8",
+    "aiohttp>=3.13.5",
 ]
 
 [project.optional-dependencies]

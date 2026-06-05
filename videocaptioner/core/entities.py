@@ -719,6 +719,45 @@ class SynthesisConfig:
 
 
 @dataclass
+class DubbingUIConfig:
+    """桌面端配音配置。
+
+    这里保留用户意图，不暴露 provider 的低层参数；线程层再转换为
+    core.dubbing.DubbingConfig。
+    """
+
+    enabled: bool = False
+    preset: str = "edge-cn-female"
+    provider: str = "edge"
+    api_key: str = ""
+    api_base: str = ""
+    model: str = "edge-tts"
+    voice: str = "zh-CN-XiaoxiaoNeural"
+    text_track: str = "auto"
+    timing: str = "balanced"
+    audio_mode: str = "replace"
+    tts_workers: int = 5
+    use_cache: bool = True
+    speaker_voices: dict[str, str] = field(default_factory=dict)
+    clone_audio_path: str = ""
+    clone_audio_text: str = ""
+
+    def print_config(self) -> str:
+        lines = ["=========== Dubbing Task ==========="]
+        lines.append(f"Enabled: {self.enabled}")
+        if self.enabled:
+            lines.append(f"Preset: {self.preset}")
+            lines.append(f"Provider: {self.provider}")
+            lines.append(f"Voice: {self.voice}")
+            lines.append(f"Text Track: {self.text_track}")
+            lines.append(f"Timing: {self.timing}")
+            lines.append(f"Audio Mode: {self.audio_mode}")
+            lines.append(f"Speakers: {len(self.speaker_voices)}")
+        lines.append("=" * 38)
+        return "\n".join(lines)
+
+
+@dataclass
 class TranscribeTask:
     """转录任务类"""
 
@@ -794,6 +833,24 @@ class SynthesisTask:
 
 
 @dataclass
+class DubbingTask:
+    """视频/音频配音任务类"""
+
+    task_id: str = field(default_factory=_generate_task_id)
+
+    queued_at: Optional[datetime.datetime] = None
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+    video_path: Optional[str] = None
+    subtitle_path: Optional[str] = None
+    output_audio_path: Optional[str] = None
+    output_video_path: Optional[str] = None
+
+    dubbing_config: Optional[DubbingUIConfig] = None
+
+
+@dataclass
 class TranscriptAndSubtitleTask:
     """转录和字幕任务类"""
 
@@ -833,6 +890,7 @@ class FullProcessTask:
     transcribe_config: Optional[TranscribeConfig] = None
     subtitle_config: Optional[SubtitleConfig] = None
     synthesis_config: Optional[SynthesisConfig] = None
+    dubbing_config: Optional[DubbingUIConfig] = None
 
 
 class BatchTaskType(Enum):

@@ -1,4 +1,5 @@
 import webbrowser
+from pathlib import Path
 
 from PyQt5.QtCore import Qt, QThread, QUrl, pyqtSignal
 from PyQt5.QtGui import QDesktopServices
@@ -27,9 +28,15 @@ from videocaptioner.core.constant import (
     INFOBAR_DURATION_SUCCESS,
     INFOBAR_DURATION_WARNING,
 )
+from videocaptioner.core.dubbing import build_dubbing_config, get_dubbing_preset
 from videocaptioner.core.entities import LLMServiceEnum, TranscribeModelEnum, TranslatorServiceEnum
 from videocaptioner.core.llm import check_whisper_connection
 from videocaptioner.core.llm.check_llm import check_llm_connection, get_available_models
+from videocaptioner.core.speech import (
+    SpeechProviderConfig,
+    SynthesisRequest,
+    create_speech_synthesizer,
+)
 from videocaptioner.core.utils.cache import disable_cache, enable_cache
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.signal_bus import signalBus
@@ -74,6 +81,8 @@ class SettingInterface(ScrollArea):
         self.subtitleGroup = SettingCardGroup(
             self.tr("字幕合成配置"), self.scrollWidget
         )
+        # 配音配置组
+        self.dubbingGroup = SettingCardGroup(self.tr("配音配置"), self.scrollWidget)
         # 保存配置组
         self.saveGroup = SettingCardGroup(self.tr("保存配置"), self.scrollWidget)
         # 个性化组
@@ -155,6 +164,72 @@ class SettingInterface(ScrollArea):
             self.tr("硬字幕视频合成时的质量等级（质量越高文件越大，编码时间越长）"),
             texts=[quality.value for quality in cfg.video_quality.validator.options],  # type: ignore
             parent=self.subtitleGroup,
+        )
+
+        # 配音配置卡片
+        self.dubbingEnabledCard = SwitchSettingCard(
+            FIF.VOLUME,
+            self.tr("默认添加配音"),
+            self.tr("开启后，最终合成页会默认生成配音"),
+            cfg.dubbing_enabled,
+            self.dubbingGroup,
+        )
+        self.dubbingPresetCard = ComboBoxSettingCard(
+            cfg.dubbing_preset,
+            FIF.VOLUME,
+            self.tr("默认配音音色"),
+            self.tr("Edge 音色免 API Key；Gemini 和 SiliconFlow 需要填写配音 API Key"),
+            texts=list(cfg.dubbing_preset.validator.options),  # type: ignore
+            parent=self.dubbingGroup,
+        )
+        self.dubbingApiKeyCard = LineEditSettingCard(
+            cfg.dubbing_api_key,
+            FIF.FINGERPRINT,
+            self.tr("配音 API Key"),
+            self.tr("Gemini 或 SiliconFlow 配音需要填写；Edge 可留空"),
+            "",
+            self.dubbingGroup,
+        )
+        self.dubbingApiBaseCard = LineEditSettingCard(
+            cfg.dubbing_api_base,
+            FIF.LINK,
+            self.tr("配音 Base URL"),
+            self.tr("仅自定义 SiliconFlow/Gemini 接口时需要修改"),
+            "https://api.siliconflow.cn/v1",
+            self.dubbingGroup,
+        )
+        self.dubbingModelCard = EditComboBoxSettingCard(
+            cfg.dubbing_model,
+            FIF.ROBOT,  # type: ignore
+            self.tr("配音模型"),
+            self.tr("Gemini 或 SiliconFlow 使用的文字转语音模型；Edge 会自动使用 edge-tts"),
+            [
+                "FunAudioLLM/CosyVoice2-0.5B",
+                "gemini-3.1-flash-tts-preview",
+                "gemini-2.5-flash-preview-tts",
+            ],
+            self.dubbingGroup,
+        )
+        self.checkDubbingConnectionCard = PushSettingCard(
+            self.tr("测试配音"),
+            FIF.CONNECT,
+            self.tr("测试当前配音配置"),
+            self.tr("合成一句试听音频，验证音色、API Key、Base URL 和模型是否可用"),
+            self.dubbingGroup,
+        )
+        self.dubbingWorkersCard = RangeSettingCard(
+            cfg.dubbing_tts_workers,
+            FIF.SPEED_HIGH,
+            self.tr("配音并发"),
+            self.tr("同时合成的字幕行数，默认 5"),
+            parent=self.dubbingGroup,
+        )
+        self.dubbingCacheCard = SwitchSettingCard(
+            FIF.HISTORY,
+            self.tr("配音缓存"),
+            self.tr("相同字幕和音色会复用已经生成的音频"),
+            cfg.dubbing_use_cache,
+            self.dubbingGroup,
         )
 
         # 保存配置卡片
@@ -245,6 +320,15 @@ class SettingInterface(ScrollArea):
         self.subtitleGroup.addSettingCard(self.needVideoCard)
         self.subtitleGroup.addSettingCard(self.softSubtitleCard)
         self.subtitleGroup.addSettingCard(self.videoQualityCard)
+
+        self.dubbingGroup.addSettingCard(self.dubbingEnabledCard)
+        self.dubbingGroup.addSettingCard(self.dubbingPresetCard)
+        self.dubbingGroup.addSettingCard(self.dubbingApiKeyCard)
+        self.dubbingGroup.addSettingCard(self.dubbingApiBaseCard)
+        self.dubbingGroup.addSettingCard(self.dubbingModelCard)
+        self.dubbingGroup.addSettingCard(self.checkDubbingConnectionCard)
+        self.dubbingGroup.addSettingCard(self.dubbingWorkersCard)
+        self.dubbingGroup.addSettingCard(self.dubbingCacheCard)
 
         self.saveGroup.addSettingCard(self.savePathCard)
         self.saveGroup.addSettingCard(self.cacheEnabledCard)
@@ -574,6 +658,9 @@ class SettingInterface(ScrollArea):
             self.translatorServiceCard.comboBox.currentText()
         )
 
+        # 初始化配音配置卡片的显示状态
+        self.__onDubbingPresetChanged(self.dubbingPresetCard.comboBox.currentText())
+
         self.setStyleSheet(
             """
             SettingInterface, #scrollWidget {
@@ -620,6 +707,7 @@ class SettingInterface(ScrollArea):
         self.expandLayout.addWidget(self.translate_serviceGroup)
         self.expandLayout.addWidget(self.translateGroup)
         self.expandLayout.addWidget(self.subtitleGroup)
+        self.expandLayout.addWidget(self.dubbingGroup)
         self.expandLayout.addWidget(self.saveGroup)
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.aboutGroup)
@@ -648,6 +736,12 @@ class SettingInterface(ScrollArea):
 
         # 检查 Whisper 连接
         self.checkWhisperConnectionCard.clicked.connect(self.checkWhisperConnection)
+
+        # 配音配置
+        self.dubbingPresetCard.comboBox.currentTextChanged.connect(
+            self.__onDubbingPresetChanged
+        )
+        self.checkDubbingConnectionCard.clicked.connect(self.checkDubbingConnection)
 
         # 保存路径
         self.savePathCard.clicked.connect(self.__onsavePathCardClicked)
@@ -690,6 +784,9 @@ class SettingInterface(ScrollArea):
         self.needVideoCard.checkedChanged.connect(signalBus.need_video_changed)
         self.videoQualityCard.comboBox.currentTextChanged.connect(
             signalBus.video_quality_changed
+        )
+        self.dubbingEnabledCard.checkedChanged.connect(
+            signalBus.dubbing_enabled_changed
         )
 
     def __showRestartTooltip(self):
@@ -902,6 +999,132 @@ class SettingInterface(ScrollArea):
         self.transcribeGroup.adjustSize()
         self.expandLayout.update()
 
+    def __onDubbingPresetChanged(self, preset_name: str):
+        """处理配音预设切换事件"""
+        try:
+            preset = get_dubbing_preset(preset_name)
+        except ValueError:
+            return
+
+        cfg.set(cfg.dubbing_voice, preset.voice)
+        cfg.set(cfg.dubbing_model, preset.model)
+        self.dubbingModelCard.comboBox.setCurrentText(preset.model)
+
+        provider = preset.provider
+        needs_api = provider in {"gemini", "siliconflow"}
+        if needs_api:
+            if not self.dubbingApiBaseCard.lineEdit.text().strip():
+                self.dubbingApiBaseCard.lineEdit.setText(preset.api_base)
+            self.dubbingPresetCard.setContent(
+                self.tr("当前使用 {provider}，需要填写配音 API Key。").format(
+                    provider=provider
+                )
+            )
+            self.checkDubbingConnectionCard.setContent(
+                self.tr("合成一句试听音频，验证音色、API Key、Base URL 和模型是否可用")
+            )
+        else:
+            self.dubbingPresetCard.setContent(
+                self.tr("当前使用 Edge 免费在线音色，无需 API Key。")
+            )
+            self.checkDubbingConnectionCard.setContent(
+                self.tr("合成一句试听音频，验证 Edge 在线音色是否可用")
+            )
+
+        for card in [
+            self.dubbingApiKeyCard,
+            self.dubbingApiBaseCard,
+            self.dubbingModelCard,
+        ]:
+            card.setVisible(needs_api)
+
+        self.dubbingGroup.adjustSize()
+        self.expandLayout.update()
+
+    def checkDubbingConnection(self):
+        """检查配音 TTS 连接"""
+        scroll_position = self.verticalScrollBar().value()
+        preset_name = self.dubbingPresetCard.comboBox.currentText().strip()
+        try:
+            preset = get_dubbing_preset(preset_name)
+        except ValueError as exc:
+            InfoBar.error(
+                self.tr("配音配置错误"),
+                str(exc),
+                duration=INFOBAR_DURATION_ERROR,
+                parent=self,
+            )
+            return
+
+        api_key = self.dubbingApiKeyCard.lineEdit.text().strip()
+        api_base = self.dubbingApiBaseCard.lineEdit.text().strip() or preset.api_base
+        model = self.dubbingModelCard.comboBox.currentText().strip() or preset.model
+        if preset.provider != "edge" and not api_key:
+            InfoBar.warning(
+                self.tr("配置不完整"),
+                self.tr("{provider} 配音需要先填写 API Key").format(
+                    provider=preset.provider
+                ),
+                duration=INFOBAR_DURATION_WARNING,
+                parent=self,
+            )
+            return
+        if preset.provider != "edge" and not model:
+            InfoBar.warning(
+                self.tr("配置不完整"),
+                self.tr("请输入配音模型"),
+                duration=INFOBAR_DURATION_WARNING,
+                parent=self,
+            )
+            return
+
+        self.checkDubbingConnectionCard.button.setEnabled(False)
+        self.checkDubbingConnectionCard.button.setText(self.tr("正在测试..."))
+        self.verticalScrollBar().setValue(scroll_position)
+
+        output_dir = Path(cfg.work_dir.value) / "dubbing-test"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{preset_name}.wav"
+        self.dubbing_connection_thread = DubbingConnectionThread(
+            provider=preset.provider,
+            api_key=api_key if preset.provider != "edge" else "",
+            api_base=api_base if preset.provider != "edge" else "",
+            model=model if preset.provider != "edge" else preset.model,
+            voice=preset.voice,
+            output_path=str(output_path),
+            style_prompt=preset.style_prompt,
+        )
+        self.dubbing_connection_thread.finished.connect(
+            self.onDubbingConnectionCheckFinished
+        )
+        self.dubbing_connection_thread.error.connect(self.onDubbingConnectionCheckError)
+        self.dubbing_connection_thread.start()
+
+    def onDubbingConnectionCheckFinished(self, audio_path: str, provider: str):
+        """处理配音测试完成事件"""
+        self.checkDubbingConnectionCard.button.setEnabled(True)
+        self.checkDubbingConnectionCard.button.setText(self.tr("测试配音"))
+        InfoBar.success(
+            self.tr("配音测试成功"),
+            self.tr("{provider} 已生成试听音频：{path}").format(
+                provider=provider,
+                path=audio_path,
+            ),
+            duration=INFOBAR_DURATION_SUCCESS,
+            parent=self,
+        )
+
+    def onDubbingConnectionCheckError(self, message: str):
+        """处理配音测试错误事件"""
+        self.checkDubbingConnectionCard.button.setEnabled(True)
+        self.checkDubbingConnectionCard.button.setText(self.tr("测试配音"))
+        InfoBar.error(
+            self.tr("配音测试失败"),
+            message,
+            duration=INFOBAR_DURATION_ERROR,
+            parent=self,
+        )
+
     def checkWhisperConnection(self):
         """检查 Whisper API 连接"""
         # 保存当前滚动位置
@@ -990,6 +1213,75 @@ class SettingInterface(ScrollArea):
             duration=INFOBAR_DURATION_ERROR,
             parent=self,
         )
+
+
+class DubbingConnectionThread(QThread):
+    """配音 TTS 连接测试线程"""
+
+    finished = pyqtSignal(str, str)
+    error = pyqtSignal(str)
+
+    def __init__(
+        self,
+        provider: str,
+        api_key: str,
+        api_base: str,
+        model: str,
+        voice: str,
+        output_path: str,
+        style_prompt: str = "",
+    ):
+        super().__init__()
+        self.provider = provider
+        self.api_key = api_key
+        self.api_base = api_base
+        self.model = model
+        self.voice = voice
+        self.output_path = output_path
+        self.style_prompt = style_prompt
+
+    def run(self):
+        """执行配音连接测试"""
+        try:
+            core_config = build_dubbing_config(
+                provider=self.provider,
+                api_key=self.api_key,
+                api_base=self.api_base,
+                model=self.model,
+                voice=self.voice,
+                style_prompt=self.style_prompt,
+            )
+            response_format = core_config.response_format
+            if core_config.provider == "gemini":
+                response_format = "wav"
+            elif core_config.provider == "edge":
+                response_format = "mp3"
+            synthesizer = create_speech_synthesizer(
+                SpeechProviderConfig(
+                    provider=core_config.provider,
+                    api_key=core_config.api_key,
+                    base_url=core_config.base_url,
+                    model=core_config.model,
+                    default_voice=core_config.voice,
+                    response_format=response_format,
+                    sample_rate=core_config.sample_rate,
+                    speed=core_config.speed,
+                    gain=core_config.gain,
+                    timeout=core_config.timeout,
+                    style_prompt=core_config.style_prompt,
+                )
+            )
+            result = synthesizer.synthesize(
+                SynthesisRequest(
+                    text="你好，这是卡卡字幕助手的配音测试。",
+                    output_path=self.output_path,
+                    voice=core_config.voice,
+                    style_prompt=core_config.style_prompt or None,
+                )
+            )
+            self.finished.emit(result.output_path, core_config.provider)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class WhisperConnectionThread(QThread):

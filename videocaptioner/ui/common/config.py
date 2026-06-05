@@ -251,6 +251,54 @@ class Config(QConfig):
     )
     use_subtitle_style = ConfigItem("Video", "UseSubtitleStyle", False, BoolValidator())
 
+    # ------------------- 配音配置 -------------------
+    dubbing_enabled = ConfigItem("Dubbing", "Enabled", False, BoolValidator())
+    dubbing_preset = OptionsConfigItem(
+        "Dubbing",
+        "Preset",
+        "edge-cn-female",
+        OptionsValidator(
+            [
+                "edge-cn-female",
+                "edge-cn-male",
+                "edge-en-female",
+                "edge-en-male",
+                "gemini-en-friendly",
+                "gemini-en-neutral",
+                "gemini-en-upbeat",
+                "siliconflow-cn-female",
+                "siliconflow-cn-male",
+                "siliconflow-cn-deep-male",
+            ]
+        ),
+    )
+    dubbing_voice = ConfigItem("Dubbing", "Voice", "zh-CN-XiaoxiaoNeural")
+    dubbing_text_track = OptionsConfigItem(
+        "Dubbing",
+        "TextTrack",
+        "auto",
+        OptionsValidator(["auto", "first", "second"]),
+    )
+    dubbing_timing = OptionsConfigItem(
+        "Dubbing",
+        "Timing",
+        "balanced",
+        OptionsValidator(["natural", "balanced", "strict"]),
+    )
+    dubbing_audio_mode = OptionsConfigItem(
+        "Dubbing",
+        "AudioMode",
+        "replace",
+        OptionsValidator(["replace", "mix", "duck"]),
+    )
+    dubbing_api_key = ConfigItem("Dubbing", "ApiKey", "")
+    dubbing_api_base = ConfigItem("Dubbing", "ApiBase", "")
+    dubbing_model = ConfigItem("Dubbing", "Model", "")
+    dubbing_tts_workers = RangeConfigItem(
+        "Dubbing", "Workers", 5, RangeValidator(1, 20)
+    )
+    dubbing_use_cache = ConfigItem("Dubbing", "UseCache", True, BoolValidator())
+
     # ------------------- 字幕样式配置 -------------------
     subtitle_style_name = ConfigItem("SubtitleStyle", "StyleName", "default")
     subtitle_layout = OptionsConfigItem(

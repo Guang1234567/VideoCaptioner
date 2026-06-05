@@ -5,6 +5,8 @@ from typing import Optional
 from videocaptioner.config import MODEL_PATH
 from videocaptioner.core.entities import (
     LANGUAGES,
+    DubbingTask,
+    DubbingUIConfig,
     FullProcessTask,
     LLMServiceEnum,
     SubtitleConfig,
@@ -242,6 +244,61 @@ class TaskFactory:
         return task
 
     @staticmethod
+    def create_dubbing_task(
+        video_path: str,
+        subtitle_path: str,
+        output_video_path: Optional[str] = None,
+        output_audio_path: Optional[str] = None,
+        task_id: Optional[str] = None,
+    ) -> DubbingTask:
+        """创建配音任务"""
+        video = Path(video_path) if video_path else None
+        subtitle = Path(subtitle_path)
+        if output_video_path is None and video:
+            output_video_path = str(video.parent / f"【配音】{video.stem}{video.suffix}")
+        if output_audio_path is None:
+            base_dir = video.parent if video else subtitle.parent
+            output_audio_path = str(base_dir / f"【配音音频】{subtitle.stem}.wav")
+
+        config = TaskFactory.create_dubbing_ui_config()
+        task = DubbingTask(
+            queued_at=datetime.datetime.now(),
+            video_path=video_path or None,
+            subtitle_path=subtitle_path,
+            output_audio_path=output_audio_path,
+            output_video_path=output_video_path,
+            dubbing_config=config,
+        )
+        if task_id:
+            task.task_id = task_id
+        return task
+
+    @staticmethod
+    def create_dubbing_ui_config() -> DubbingUIConfig:
+        return DubbingUIConfig(
+            enabled=cfg.dubbing_enabled.value,
+            preset=cfg.dubbing_preset.value,
+            provider=TaskFactory._provider_from_dubbing_preset(cfg.dubbing_preset.value),
+            api_key=cfg.dubbing_api_key.value,
+            api_base=cfg.dubbing_api_base.value,
+            model=cfg.dubbing_model.value,
+            voice=cfg.dubbing_voice.value,
+            text_track=cfg.dubbing_text_track.value,
+            timing=cfg.dubbing_timing.value,
+            audio_mode=cfg.dubbing_audio_mode.value,
+            tts_workers=cfg.dubbing_tts_workers.value,
+            use_cache=cfg.dubbing_use_cache.value,
+        )
+
+    @staticmethod
+    def _provider_from_dubbing_preset(preset: str) -> str:
+        if preset.startswith("siliconflow"):
+            return "siliconflow"
+        if preset.startswith("gemini"):
+            return "gemini"
+        return "edge"
+
+    @staticmethod
     def create_transcript_and_subtitle_task(
         file_path: str,
         output_path: Optional[str] = None,
@@ -267,6 +324,7 @@ class TaskFactory:
         transcribe_config: Optional[TranscribeConfig] = None,
         subtitle_config: Optional[SubtitleConfig] = None,
         synthesis_config: Optional[SynthesisConfig] = None,
+        dubbing_config: Optional[DubbingUIConfig] = None,
     ) -> FullProcessTask:
         """创建完整处理任务（转录+字幕+合成）"""
         if output_path is None:
@@ -279,4 +337,18 @@ class TaskFactory:
             queued_at=datetime.datetime.now(),
             file_path=file_path,
             output_path=output_path,
+            transcribe_config=transcribe_config
+            or TaskFactory.create_transcribe_task(file_path, need_next_task=True).transcribe_config,
+            subtitle_config=subtitle_config
+            or TaskFactory.create_subtitle_task(
+                str(Path(file_path).with_suffix(".srt")),
+                file_path,
+                need_next_task=True,
+            ).subtitle_config,
+            synthesis_config=synthesis_config
+            or TaskFactory.create_synthesis_task(
+                file_path,
+                str(Path(file_path).with_suffix(".ass")),
+            ).synthesis_config,
+            dubbing_config=dubbing_config or TaskFactory.create_dubbing_ui_config(),
         )

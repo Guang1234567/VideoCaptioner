@@ -1,6 +1,7 @@
 import queue
 import time
 from functools import partial
+from pathlib import Path
 from typing import Dict, Optional
 
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -12,6 +13,7 @@ from videocaptioner.core.entities import (
 )
 from videocaptioner.core.utils.logger import setup_logger
 from videocaptioner.ui.task_factory import TaskFactory
+from videocaptioner.ui.thread.dubbing_thread import DubbingThread
 from videocaptioner.ui.thread.subtitle_thread import SubtitleThread
 from videocaptioner.ui.thread.transcript_thread import TranscriptThread
 from videocaptioner.ui.thread.video_synthesis_thread import VideoSynthesisThread
@@ -238,7 +240,7 @@ class BatchProcessThread(QThread):
     ):
         """处理全流程任务的转录进度"""
         if batch_task.status == BatchTaskStatus.RUNNING:
-            progress_value = progress // 3  # 转录占33%进度
+            progress_value = progress // (4 if self._full_process_has_dubbing() else 3)
             self.task_progress.emit(batch_task.file_path, progress_value, message)
 
     def on_full_process_finished(self, batch_task: BatchTask, task: TranscribeTask):
@@ -275,17 +277,67 @@ class BatchProcessThread(QThread):
     ):
         """处理全流程任务中字幕部分的进度"""
         if batch_task.status == BatchTaskStatus.RUNNING:
-            progress_value = 33 + progress // 3  # 字幕处理占中间33%进度
+            if self._full_process_has_dubbing():
+                progress_value = 25 + progress // 4
+            else:
+                progress_value = 33 + progress // 3
             self.task_progress.emit(batch_task.file_path, progress_value, message)
 
     def on_full_process_subtitle_finished(
         self, batch_task: BatchTask, video_path: str, subtitle_path: str
     ):
-        """处理字幕完成后开始视频合成任务"""
+        """处理字幕完成后开始配音或视频合成任务"""
         if batch_task.current_thread in self.threads:
             self.threads.remove(batch_task.current_thread)
 
-        # 字幕完成后创建视频合成任务
+        if self._full_process_has_dubbing():
+            video = Path(video_path)
+            dubbing_task = self.factory.create_dubbing_task(
+                video_path,
+                subtitle_path,
+                output_video_path=str(video.parent / f"【配音】{video.stem}{video.suffix}"),
+            )
+            thread = DubbingThread(dubbing_task)
+            batch_task.current_thread = thread
+            self.threads.append(thread)
+            thread.progress.connect(
+                partial(self.on_full_process_dubbing_progress, batch_task)
+            )
+            thread.error.connect(partial(self._on_error_wrapper, batch_task))
+            thread.finished.connect(
+                partial(self.on_full_process_dubbing_finished, batch_task, subtitle_path)
+            )
+            thread.start()
+            return
+
+        self._start_full_process_synthesis(batch_task, video_path, subtitle_path)
+
+    def on_full_process_dubbing_progress(
+        self, batch_task: BatchTask, progress: int, message: str
+    ):
+        """处理全流程任务中配音部分的进度"""
+        if batch_task.status == BatchTaskStatus.RUNNING:
+            progress_value = 50 + progress // 4
+            self.task_progress.emit(batch_task.file_path, progress_value, message)
+
+    def on_full_process_dubbing_finished(
+        self, batch_task: BatchTask, subtitle_path: str, task
+    ):
+        """处理配音完成后开始视频合成任务"""
+        if batch_task.current_thread in self.threads:
+            self.threads.remove(batch_task.current_thread)
+
+        if not task.output_video_path:
+            self._on_finished_wrapper(batch_task, task)
+            return
+
+        self._start_full_process_synthesis(
+            batch_task, task.output_video_path, subtitle_path
+        )
+
+    def _start_full_process_synthesis(
+        self, batch_task: BatchTask, video_path: str, subtitle_path: str
+    ):
         synthesis_task = self.factory.create_synthesis_task(video_path, subtitle_path)
         thread = VideoSynthesisThread(synthesis_task)
         batch_task.current_thread = thread
@@ -306,8 +358,14 @@ class BatchProcessThread(QThread):
     ):
         """处理全流程任务中视频合成部分的进度"""
         if batch_task.status == BatchTaskStatus.RUNNING:
-            progress_value = 66 + progress // 3  # 视频合成占最后34%进度
+            if self._full_process_has_dubbing():
+                progress_value = 75 + progress // 4
+            else:
+                progress_value = 66 + progress // 3
             self.task_progress.emit(batch_task.file_path, progress_value, message)
+
+    def _full_process_has_dubbing(self) -> bool:
+        return self.factory.create_dubbing_ui_config().enabled
 
     def stop_task(self, file_path: str):
         if file_path in self.current_tasks:

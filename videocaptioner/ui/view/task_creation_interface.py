@@ -15,13 +15,16 @@ from PyQt5.QtWidgets import (
 )
 from qfluentwidgets import (
     BodyLabel,
+    CaptionLabel,
+    CardWidget,
+    ComboBox,
     FluentIcon,
     HyperlinkButton,
     InfoBar,
     InfoBarPosition,
     LineEdit,
+    PrimaryToolButton,
     ProgressBar,
-    ToolButton,
 )
 
 from videocaptioner.config import APPDATA_PATH, ASSETS_PATH, VERSION
@@ -36,6 +39,7 @@ from videocaptioner.core.entities import (
     SupportedVideoFormats,
 )
 from videocaptioner.ui.common.config import cfg
+from videocaptioner.ui.common.signal_bus import signalBus
 from videocaptioner.ui.components.DonateDialog import DonateDialog
 from videocaptioner.ui.thread.video_download_thread import VideoDownloadThread
 from videocaptioner.ui.view.log_window import LogWindow
@@ -48,12 +52,13 @@ class TaskCreationInterface(QWidget):
     任务创建界面类，用于创建和配置任务。
     """
 
-    finished = pyqtSignal(str)  # 该信号用于在任务创建完成后通知主窗口
+    finished = pyqtSignal(str, object)  # 该信号用于在任务创建完成后通知主窗口
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.task = None
         self.log_window = None
+        self._start_mode = "browse"
 
         self.setObjectName("TaskCreationInterface")
         self.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore
@@ -66,10 +71,11 @@ class TaskCreationInterface(QWidget):
     def setup_ui(self):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setObjectName("main_layout")
-        self.main_layout.setSpacing(50)
-        self.main_layout.addSpacing(120)
+        self.main_layout.setSpacing(28)
+        self.main_layout.addStretch(1)
         self.setup_logo()
         self.setup_search_layout()
+        self.setup_target_layout()
         self.setup_status_layout()
         self.setup_info_label()
 
@@ -86,7 +92,6 @@ class TaskCreationInterface(QWidget):
         self.logo_label.setPixmap(self.logo_pixmap)
         self.logo_label.setAlignment(Qt.AlignCenter)  # type: ignore
         self.main_layout.addWidget(self.logo_label)
-        self.main_layout.addSpacing(10)
 
     def setup_search_layout(self):
         self.search_layout = QHBoxLayout()
@@ -95,56 +100,45 @@ class TaskCreationInterface(QWidget):
         self.search_input.setPlaceholderText(self.tr("请拖拽文件或输入视频URL"))
         self.search_input.setFixedHeight(40)
         self.search_input.setClearButtonEnabled(True)
-        self.search_input.focusOutEvent = lambda e: super(
-            LineEdit, self.search_input
-        ).focusOutEvent(e)
-        self.search_input.paintEvent = lambda e: super(
-            LineEdit, self.search_input
-        ).paintEvent(e)
-        self.search_input.setStyleSheet(
-            self.search_input.styleSheet()
-            + """
-            QLineEdit {
-                border-radius: 18px;
-                padding: 0 20px;
-                background-color: transparent;
-                border: 1px solid rgba(255,255, 255, 0.08);
-            }
-            QLineEdit:focus[transparent=true] {
-                border: 1px solid rgba(47,141, 99, 0.48);
-            }
-
-        """
-        )
-        self.start_button = ToolButton(FluentIcon.FOLDER, self)
+        self.start_button = PrimaryToolButton(FluentIcon.FOLDER, self)
         self.start_button.setFixedSize(40, 40)
-        self.start_button.setStyleSheet(
-            self.start_button.styleSheet()
-            + """
-            QToolButton {
-                border-radius: 20px;
-                background-color: #2F8D63;
-            }
-            QToolButton:hover {
-                background-color: #2E805C;
-            }
-            QToolButton:pressed {
-                background-color: #2E905C;
-            }
-        """
-        )
         self.search_layout.addWidget(self.search_input)
         self.search_layout.addWidget(self.start_button)
         self.search_layout.setSpacing(10)
         self.main_layout.addLayout(self.search_layout)
-        self.main_layout.addSpacing(100)
+
+    def setup_target_layout(self):
+        self.target_card = CardWidget(self)
+        target_layout = QHBoxLayout(self.target_card)
+        target_layout.setContentsMargins(16, 10, 16, 10)
+        target_layout.setSpacing(12)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+        title = BodyLabel(self.tr("输出目标"), self.target_card)
+        self.target_hint = CaptionLabel("", self.target_card)
+        text_layout.addWidget(title)
+        text_layout.addWidget(self.target_hint)
+
+        self.target_combo = ComboBox(self.target_card)
+        self.target_combo.addItems(
+            [
+                self.tr("中文字幕 + 中文配音"),
+                self.tr("中文字幕视频"),
+                self.tr("中文配音视频"),
+            ]
+        )
+        self.target_combo.setMinimumWidth(190)
+
+        target_layout.addLayout(text_layout, 1)
+        target_layout.addWidget(self.target_combo)
+        self.main_layout.addWidget(self.target_card)
 
     def setup_status_layout(self):
         self.status_layout = QVBoxLayout()
         self.status_layout.setContentsMargins(50, 0, 30, 5)
         self.status_layout.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)  # type: ignore
-        self.status_label = BodyLabel(self.tr("准备就绪"), self)
-        self.status_label.setStyleSheet("font-size: 14px; color: #888888;")
+        self.status_label = CaptionLabel(self.tr("准备就绪"), self)
         self.status_layout.addWidget(self.status_label, 0, Qt.AlignCenter)  # type: ignore
         self.progress_bar = ProgressBar(self)
         self.status_label.hide()
@@ -163,36 +157,15 @@ class TaskCreationInterface(QWidget):
 
         # 创建日志按钮
         self.log_button = HyperlinkButton(url="", text=self.tr("查看日志"), parent=self)
-        self.log_button.setStyleSheet(
-            self.log_button.styleSheet()
-            + """
-            QPushButton {
-                font-size: 12px;
-                color: #2F8D63;
-                text-decoration: underline;
-            }
-        """
-        )
 
         # 创建捐助按钮
         self.donate_button = HyperlinkButton(url="", text=self.tr("捐助"), parent=self)
-        self.donate_button.setStyleSheet(
-            self.donate_button.styleSheet()
-            + """
-            QPushButton {
-                font-size: 12px;
-                color: #2F8D63;
-                text-decoration: underline;
-            }
-        """
-        )
 
         # 添加版权信息标签
-        self.info_label = BodyLabel(
+        self.info_label = CaptionLabel(
             self.tr(f"©VideoCaptioner {VERSION} • By Weifeng"), self
         )
         self.info_label.setAlignment(Qt.AlignCenter)  # type: ignore
-        self.info_label.setStyleSheet("font-size: 12px; color: #888888;")
 
         # 将组件添加到底部布局
         bottom_layout.addStretch()
@@ -201,20 +174,40 @@ class TaskCreationInterface(QWidget):
         bottom_layout.addWidget(self.donate_button)
         bottom_layout.addStretch()
 
-        self.main_layout.addStretch()
         self.main_layout.addWidget(bottom_container)
 
     def setup_signals(self):
         self.start_button.clicked.connect(self.on_start_clicked)
         self.search_input.textChanged.connect(self.on_search_input_changed)
+        self.target_combo.currentTextChanged.connect(self.on_target_changed)
         self.log_button.clicked.connect(self.show_log_window)
         self.donate_button.clicked.connect(self.show_donate_dialog)
 
     def setup_values(self):
         self.search_input.setText("")
+        self.on_target_changed(self.target_combo.currentText())
+
+    def on_target_changed(self, text: str):
+        add_subtitle = text != self.tr("中文配音视频")
+        add_dubbing = text != self.tr("中文字幕视频")
+        need_translate = True
+
+        cfg.set(cfg.need_translate, need_translate)
+        cfg.set(cfg.need_video, add_subtitle)
+        cfg.set(cfg.dubbing_enabled, add_dubbing)
+        signalBus.subtitle_translation_changed.emit(need_translate)
+        signalBus.need_video_changed.emit(add_subtitle)
+        signalBus.dubbing_enabled_changed.emit(add_dubbing)
+
+        if add_subtitle and add_dubbing:
+            self.target_hint.setText(self.tr("外语视频会输出中文字幕，并生成中文配音成片。"))
+        elif add_subtitle:
+            self.target_hint.setText(self.tr("外语视频会输出中文字幕视频。"))
+        else:
+            self.target_hint.setText(self.tr("外语视频会输出中文配音视频，并保留配音音频。"))
 
     def on_start_clicked(self):
-        if self.start_button._icon == FluentIcon.FOLDER:
+        if self._start_mode == "browse":
             desktop_path = QStandardPaths.writableLocation(
                 QStandardPaths.DesktopLocation
             )
@@ -236,8 +229,10 @@ class TaskCreationInterface(QWidget):
 
     def on_search_input_changed(self):
         if self.search_input.text():
+            self._start_mode = "process"
             self.start_button.setIcon(FluentIcon.PLAY)
         else:
+            self._start_mode = "browse"
             self.start_button.setIcon(FluentIcon.FOLDER)
 
     def dragEnterEvent(self, event):
@@ -297,7 +292,7 @@ class TaskCreationInterface(QWidget):
             return False
 
     def _process_file(self, file_path):
-        self.finished.emit(file_path)
+        self.finished.emit(file_path, None)
 
     def _process_url(self, url):
         # 检测 cookies.txt 文件
@@ -305,7 +300,7 @@ class TaskCreationInterface(QWidget):
         if not cookiefile_path.exists():
             InfoBar.warning(
                 self.tr("警告"),
-                self.tr("建议根据文档配置cookies.txt文件，以可以下载高清视频"),
+                self.tr("未检测到 cookies.txt。YouTube 可能要求登录验证，失败时请先配置 cookies。"),
                 duration=INFOBAR_DURATION_WARNING,
                 parent=self,
             )
@@ -324,10 +319,10 @@ class TaskCreationInterface(QWidget):
             parent=self,
         )
 
-    def on_video_download_finished(self, video_file_path):
+    def on_video_download_finished(self, video_file_path, subtitle_file_path=None):
         """视频下载完成的回调函数"""
         if video_file_path:
-            self.finished.emit(video_file_path)
+            self.finished.emit(video_file_path, subtitle_file_path)
             InfoBar.success(
                 self.tr("下载成功"),
                 self.tr("视频下载完成，开始自动处理..."),

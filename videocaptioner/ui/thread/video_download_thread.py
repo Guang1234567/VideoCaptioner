@@ -15,9 +15,7 @@ logger = setup_logger("video_download_thread")
 class VideoDownloadThread(QThread):
     """视频下载线程类"""
 
-    finished = pyqtSignal(
-        str
-    )  # 发送下载完成的信号(视频路径, 字幕路径, 缩略图路径, 视频信息)
+    finished = pyqtSignal(str, object)  # 发送下载完成的信号(视频路径, 字幕路径)
     progress = pyqtSignal(int, str)  # 发送下载进度的信号
     error = pyqtSignal(str)  # 发送错误信息的信号
 
@@ -31,10 +29,29 @@ class VideoDownloadThread(QThread):
             video_file_path, subtitle_file_path, thumbnail_file_path, info_dict = (
                 self.download()
             )
-            self.finished.emit(video_file_path)
+            self.finished.emit(video_file_path, subtitle_file_path)
         except Exception as e:
             logger.exception("下载视频失败: %s", str(e))
-            self.error.emit(str(e))
+            self.error.emit(self._friendly_error(str(e)))
+
+    def _friendly_error(self, message: str) -> str:
+        if "Sign in to confirm" in message or "not a bot" in message:
+            return self.tr(
+                "YouTube 要求登录验证。请导出浏览器 cookies.txt 放到：{path}，然后重试。"
+            ).format(path=str(APPDATA_PATH / "cookies.txt"))
+        if "cookies" in message.lower() and "youtube" in message.lower():
+            return self.tr(
+                "YouTube 下载需要 cookies.txt。请把导出的 cookies.txt 放到：{path}"
+            ).format(path=str(APPDATA_PATH / "cookies.txt"))
+        if "BiliBili" in message and "HTTP Error 412" in message:
+            return self.tr(
+                "B 站拒绝了本次下载请求。请导出浏览器 cookies.txt 放到：{path}，或换一个公开可下载链接。"
+            ).format(path=str(APPDATA_PATH / "cookies.txt"))
+        if "ted.com" in self.url and "HTTP Error 403" in message:
+            return self.tr(
+                "TED 拒绝了本次下载请求。已尝试备用视频流仍失败，请稍后重试或换一个公开可下载链接。"
+            )
+        return message
 
     def progress_hook(self, d):
         """下载进度回调函数"""
@@ -114,6 +131,27 @@ class VideoDownloadThread(QThread):
 
     def download(self, need_subtitle: bool = True, need_thumbnail: bool = False):
         """下载视频"""
+        try:
+            return self._download_with_format(
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                need_subtitle=need_subtitle,
+                need_thumbnail=need_thumbnail,
+            )
+        except Exception as exc:
+            if "ted.com" not in self.url or "HTTP Error 403" not in str(exc):
+                raise
+
+            logger.warning("TED mp4 直链下载失败，改用 HLS 流重试: %s", exc)
+            return self._download_with_format(
+                "bestvideo[protocol^=m3u8]+bestaudio[protocol^=m3u8]/best[protocol^=m3u8]/best",
+                need_subtitle=need_subtitle,
+                need_thumbnail=need_thumbnail,
+            )
+
+    def _download_with_format(
+        self, video_format: str, *, need_subtitle: bool, need_thumbnail: bool
+    ):
+        """使用指定格式下载视频。"""
         logger.info("开始下载视频: %s", self.url)
 
         # 初始化 ydl 选项
@@ -123,11 +161,12 @@ class VideoDownloadThread(QThread):
                 "subtitle": "【下载字幕】.%(ext)s",
                 "thumbnail": "thumbnail",
             },
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",  # 优先下载mp4格式
+            "format": video_format,  # 优先下载mp4格式，必要时由上层切换备用流
             "progress_hooks": [self.progress_hook],  # 下载进度钩子
             "quiet": True,  # 禁用日志输出
             "no_warnings": True,  # 禁用警告信息
             "noprogress": True,
+            "writesubtitles": need_subtitle,  # 下载人工字幕
             "writeautomaticsub": need_subtitle,  # 下载自动生成的字幕
             "writethumbnail": need_thumbnail,  # 下载缩略图
             "thumbnail_format": "jpg",  # 指定缩略图的格式
@@ -149,17 +188,23 @@ class VideoDownloadThread(QThread):
             subtitle_language = info_dict.get("language", None)
             if subtitle_language:
                 subtitle_language = subtitle_language.lower().split("-")[0]
+                ydl.params["subtitleslangs"] = [subtitle_language]
 
             try:
                 subtitle_download_link = None
-                automatic_captions = info_dict.get("automatic_captions")
-                if automatic_captions and subtitle_language:
-                    for lang_code in automatic_captions:
+                subtitle_sources = [
+                    info_dict.get("subtitles"),
+                    info_dict.get("automatic_captions"),
+                ]
+                for captions in subtitle_sources:
+                    if not captions or not subtitle_language:
+                        continue
+                    for lang_code in captions:
                         if lang_code.startswith(subtitle_language):
-                            subtitle_download_link = automatic_captions[lang_code][-1][
-                                "url"
-                            ]
+                            subtitle_download_link = captions[lang_code][-1]["url"]
                             break
+                    if subtitle_download_link:
+                        break
             except Exception:
                 subtitle_download_link = None
 

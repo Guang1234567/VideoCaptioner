@@ -31,6 +31,7 @@ def run(args: Namespace, config: dict) -> int:
             "noplaylist": True,
             "quiet": quiet,
             "no_warnings": quiet,
+            "noprogress": quiet,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
             ydl.download([url])

@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 from PyQt5.QtWidgets import QSizePolicy, QStackedWidget, QVBoxLayout, QWidget
@@ -16,13 +17,7 @@ class HomeInterface(QWidget):
         super().__init__(parent)
         self._current_task_id: Optional[str] = None  # 当前流程的任务 ID
 
-        # 设置对象名称和样式
         self.setObjectName("HomeInterface")
-        self.setStyleSheet(
-            """
-            HomeInterface{background: white}
-        """
-        )
 
         # 创建分段控件和堆叠控件
         self.pivot = SegmentedWidget(self)
@@ -70,9 +65,13 @@ class HomeInterface(QWidget):
             self.switch_to_video_synthesis
         )
 
-    def switch_to_transcription(self, file_path):
+    def switch_to_transcription(self, file_path, subtitle_path=None):
         # 流程开始，生成新的 task_id
         self._current_task_id = generate_task_id()
+
+        if subtitle_path and Path(str(subtitle_path)).exists():
+            self.switch_to_subtitle_optimization(str(subtitle_path), file_path)
+            return
 
         transcribe_task = TaskFactory.create_transcribe_task(
             file_path, need_next_task=True, task_id=self._current_task_id
