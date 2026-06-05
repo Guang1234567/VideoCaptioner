@@ -22,7 +22,7 @@ from qfluentwidgets import (
     InfoBar,
     InfoBarPosition,
     LineEdit,
-    PrimaryToolButton,
+    PrimaryPushButton,
     ProgressBar,
 )
 
@@ -81,7 +81,7 @@ class TaskCreationInterface(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setObjectName("main_layout")
         self.main_layout.setSpacing(22)
-        self.main_layout.addStretch(1)
+        self.main_layout.setContentsMargins(0, 86, 0, 16)
         self.setup_task_card()
         self.setup_status_layout()
         self.main_layout.addStretch(1)
@@ -113,7 +113,7 @@ class TaskCreationInterface(QWidget):
 
         self.logo_label.setPixmap(logo_pixmap)
         self.logo_label.setAlignment(Qt.AlignCenter)  # type: ignore
-        self.task_layout.addWidget(self.logo_label)
+        self.task_layout.addWidget(self.logo_label, 0, Qt.AlignCenter)  # type: ignore
 
     def setup_search_layout(self):
         self.search_layout = QHBoxLayout()
@@ -122,8 +122,9 @@ class TaskCreationInterface(QWidget):
         self.search_input.setPlaceholderText(self.tr("请拖拽文件或输入视频URL"))
         self.search_input.setFixedHeight(40)
         self.search_input.setClearButtonEnabled(True)
-        self.start_button = PrimaryToolButton(FluentIcon.FOLDER, self)
-        self.start_button.setFixedSize(40, 40)
+        self.start_button = PrimaryPushButton(FluentIcon.FOLDER, self.tr("选择文件"), self)
+        self.start_button.setFixedHeight(40)
+        self.start_button.setMinimumWidth(108)
         self.search_layout.addWidget(self.search_input)
         self.search_layout.addWidget(self.start_button)
         self.search_layout.setSpacing(10)
@@ -207,9 +208,11 @@ class TaskCreationInterface(QWidget):
         if self.search_input.text():
             self._start_mode = "process"
             self.start_button.setIcon(FluentIcon.PLAY)
+            self.start_button.setText(self.tr("开始处理"))
         else:
             self._start_mode = "browse"
             self.start_button.setIcon(FluentIcon.FOLDER)
+            self.start_button.setText(self.tr("选择文件"))
 
     def dragEnterEvent(self, event):
         event.accept() if event.mimeData().hasUrls() else event.ignore()

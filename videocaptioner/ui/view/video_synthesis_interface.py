@@ -22,6 +22,7 @@ from qfluentwidgets import (
     CardWidget,
     ComboBox,
     CommandBar,
+    IconWidget,
     InfoBar,
     InfoBarPosition,
     LineEdit,
@@ -120,9 +121,8 @@ class OutputOptionCard(CardWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(12)
-        self.iconButton = PushButton(icon, "", self)
-        self.iconButton.setEnabled(False)
-        self.iconButton.setFixedSize(36, 36)
+        self.iconWidget = IconWidget(icon, self)
+        self.iconWidget.setFixedSize(36, 36)
         textBox = QVBoxLayout()
         textBox.setSpacing(4)
         self.titleLabel = BodyLabel(title, self)
@@ -133,7 +133,7 @@ class OutputOptionCard(CardWidget):
         self.switchButton = SwitchButton(self)
         self.switchButton.setOnText("")
         self.switchButton.setOffText("")
-        layout.addWidget(self.iconButton)
+        layout.addWidget(self.iconWidget)
         layout.addLayout(textBox, 1)
         layout.addWidget(self.switchButton)
 
@@ -450,6 +450,12 @@ class VideoSynthesisInterface(QWidget):
         output_cards.addWidget(self.subtitle_output_card, 1)
         output_cards.addWidget(self.dubbing_output_card, 1)
         output_layout.addLayout(output_cards)
+        self.output_hint_label = CaptionLabel(
+            self.tr("请先打开“字幕视频”或“配音”，再开始生成。"),
+            self.output_panel,
+        )
+        self.output_hint_label.setObjectName("outputHintLabel")
+        output_layout.addWidget(self.output_hint_label)
         self.content_layout.addWidget(self.output_panel)
 
         self.dubbing_card = CardWidget(self)
@@ -675,6 +681,9 @@ class VideoSynthesisInterface(QWidget):
     def _update_start_button_text(self):
         add_subtitle = cfg.need_video.value
         add_dubbing = cfg.dubbing_enabled.value
+        self.synthesize_button.setEnabled(add_subtitle or add_dubbing)
+        if hasattr(self, "output_hint_label"):
+            self.output_hint_label.setVisible(not add_subtitle and not add_dubbing)
         if add_subtitle and add_dubbing:
             self.synthesize_button.setText(self.tr("生成成片"))
         elif add_dubbing:
@@ -1011,7 +1020,7 @@ class VideoSynthesisInterface(QWidget):
         if not add_subtitle and not add_dubbing:
             self._show_preflight_error(
                 self.tr("请选择输出内容"),
-                self.tr("至少需要开启添加字幕或添加配音。"),
+                self.tr("请在“输出内容”里至少打开“字幕视频”或“配音”。"),
             )
             return False
         if not subtitle_file:

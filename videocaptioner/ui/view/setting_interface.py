@@ -679,6 +679,19 @@ class SettingInterface(ScrollArea):
                 background-color: transparent;
                 color: white;
             }
+            SettingCard, PushSettingCard, SwitchSettingCard, RangeSettingCard,
+            ComboBoxSettingCard, OptionsSettingCard, PrimaryPushSettingCard {
+                background-color: #303030;
+                color: white;
+                border: 1px solid #4a4a4a;
+                border-radius: 8px;
+            }
+            LineEdit, ComboBox, EditableComboBox {
+                background-color: #3a3a3a;
+                color: white;
+                border: 1px solid #5a5a5a;
+                border-radius: 6px;
+            }
         """
         )
 

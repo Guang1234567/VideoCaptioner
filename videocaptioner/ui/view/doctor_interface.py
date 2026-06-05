@@ -93,22 +93,20 @@ class CheckRow(CardWidget):
         super().__init__(parent)
         self.setObjectName("checkRow")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 8, 14, 8)
+        layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(12)
         self.badge = StatusPill(check.status, self)
         textBox = QVBoxLayout()
-        textBox.setSpacing(3)
-        self.nameLabel = BodyLabel(check.name, self)
-        self.messageLabel = CaptionLabel(check.message, self)
+        textBox.setSpacing(4)
+        primary_text = _primary_check_text(check)
+        secondary_text = _secondary_check_text(check)
+        self.nameLabel = BodyLabel(primary_text, self)
+        self.messageLabel = CaptionLabel(secondary_text, self)
         self.messageLabel.setWordWrap(True)
         textBox.addWidget(self.nameLabel)
         textBox.addWidget(self.messageLabel)
         layout.addWidget(self.badge)
         layout.addLayout(textBox, 1)
-        if check.fix:
-            fix = CaptionLabel(check.fix, self)
-            fix.setWordWrap(True)
-            layout.addWidget(fix, 1)
         self.setProperty("status", check.status)
 
 
@@ -202,10 +200,10 @@ class DoctorInterface(ScrollArea):
     def _show_pending_rows(self):
         self._clear_results()
         pending = [
-            Check("python / ffmpeg / ffprobe", "pending", self.tr("等待检查本机音视频依赖")),
-            Check("yt-dlp", "pending", self.tr("等待检查在线视频下载能力")),
-            Check("transcribe / subtitle / LLM", "pending", self.tr("等待检查转录、字幕处理和模型配置")),
-            Check("dubbing", "pending", self.tr("等待检查当前配音 provider、音色和 Key")),
+            Check("python / ffmpeg / ffprobe", "pending", self.tr("检查本机音视频依赖")),
+            Check("yt-dlp", "pending", self.tr("检查在线视频下载能力")),
+            Check("transcribe / subtitle / LLM", "pending", self.tr("检查转录、字幕和模型配置")),
+            Check("dubbing", "pending", self.tr("检查当前配音服务、音色和 Key")),
         ]
         for check in pending:
             self.resultLayout.addWidget(CheckRow(check, self.resultContainer))
@@ -290,6 +288,65 @@ def _group_status(checks: list[Check]) -> str:
     if any(c.status == "warn" for c in checks):
         return "warn"
     return "ok"
+
+
+def _primary_check_text(check: Check) -> str:
+    if check.status in {"error", "warn"} and check.fix:
+        return _friendly_fix_text(check.fix)
+    if check.status == "checking":
+        return "正在检查"
+    if check.status == "pending":
+        return check.message
+    return _friendly_check_name(check.name)
+
+
+def _secondary_check_text(check: Check) -> str:
+    name = _friendly_check_name(check.name)
+    if check.status in {"error", "warn"} and check.fix:
+        return f"{name}：{check.message}"
+    if check.status in {"checking", "pending"}:
+        return name
+    return check.message
+
+
+def _friendly_check_name(name: str) -> str:
+    return {
+        "python": "Python 运行环境",
+        "ffmpeg": "FFmpeg 音视频处理",
+        "ffprobe": "FFprobe 媒体信息读取",
+        "yt-dlp": "在线视频下载",
+        "config.file": "配置文件",
+        "transcribe.asr": "转录方式",
+        "subtitle.processing": "字幕处理",
+        "llm.api_key": "大模型 API Key",
+        "llm.model": "大模型名称",
+        "whisper_api.api_key": "Whisper API Key",
+        "whisper-cpp": "本地 Whisper",
+        "dubbing.preset": "配音音色",
+        "dubbing.api_key": "配音 API Key",
+        "dubbing.provider": "配音服务",
+        "dubbing.voice": "配音声音",
+        "api.dubbing": "配音真实请求",
+        "running": "诊断任务",
+    }.get(name, name)
+
+
+def _friendly_fix_text(fix: str) -> str:
+    replacements = {
+        "Install ffmpeg and make sure it is on PATH": "安装 FFmpeg，并确保命令行可以直接运行 ffmpeg",
+        "Install ffprobe and make sure it is on PATH": "安装 FFprobe，并确保命令行可以直接运行 ffprobe",
+        "Install yt-dlp and make sure it is on PATH": "安装或更新 yt-dlp，用于下载在线视频",
+        "Update yt-dlp if online downloads fail": "如果在线视频下载失败，请先更新 yt-dlp",
+        "Run 'videocaptioner config init' or set values with environment variables": "打开设置页保存一次配置，或运行 videocaptioner config init",
+        "Run 'videocaptioner config set llm.api_key <key>' or disable AI polish/split": "填写大模型 API Key，或关闭需要大模型的字幕优化功能",
+        "Run 'videocaptioner config set llm.model <model>'": "选择一个可用的大模型名称",
+        "Run 'videocaptioner config set dubbing.api_key <key>'": "在配音页或设置页填写当前配音服务的 API Key",
+        "Run 'videocaptioner config set dubbing.preset edge-cn-female'": "在配音页选择一个默认音色",
+        "Use siliconflow, gemini, or edge": "配音服务请选择 Edge、Gemini 或 SiliconFlow",
+        "Use a preset or a provider-supported voice": "选择当前服务支持的音色",
+        "Run a short 'videocaptioner dub sample.srt' to verify billing/provider access": "用一小段字幕测试配音服务是否能真实返回音频",
+    }
+    return replacements.get(fix, fix)
 
 
 def _status_label(status: str) -> str:

@@ -311,7 +311,7 @@ class DubbingInterface(ScrollArea):
             self.providerSegment.addItem(
                 routeKey=option.key,
                 text=option.title,
-                onClick=lambda key=option.key: self._on_provider_changed(key),
+                onClick=lambda _checked=False, key=option.key: self._on_provider_changed(key),
             )
         setFont(self.providerSegment, 13)
         heroLayout.addLayout(heroText, 1)
@@ -324,9 +324,9 @@ class DubbingInterface(ScrollArea):
 
         self.voicePanel = QWidget(self.bodyPanel)
         self.voicePanel.setMinimumWidth(560)
-        voiceLayout = QVBoxLayout(self.voicePanel)
-        voiceLayout.setContentsMargins(0, 0, 0, 0)
-        voiceLayout.setSpacing(12)
+        self.voiceLayout = QVBoxLayout(self.voicePanel)
+        self.voiceLayout.setContentsMargins(0, 0, 0, 0)
+        self.voiceLayout.setSpacing(12)
         voiceHeader = QHBoxLayout()
         voiceHeader.addWidget(BodyLabel(self.tr("可用音色"), self.voicePanel))
         voiceHeader.addStretch(1)
@@ -337,8 +337,8 @@ class DubbingInterface(ScrollArea):
         self.voiceGrid.setContentsMargins(0, 0, 0, 0)
         self.voiceGrid.setHorizontalSpacing(12)
         self.voiceGrid.setVerticalSpacing(12)
-        voiceLayout.addLayout(voiceHeader)
-        voiceLayout.addWidget(self.voiceGridWidget)
+        self.voiceLayout.addLayout(voiceHeader)
+        self.voiceLayout.addWidget(self.voiceGridWidget)
 
         self.sidePanel = QWidget(self.bodyPanel)
         self.sidePanel.setMinimumWidth(320)
@@ -365,13 +365,17 @@ class DubbingInterface(ScrollArea):
     def _connect_signals(self):
         self.currentPanel.previewButton.clicked.connect(self._preview_current)
         self.configPanel.testButton.clicked.connect(self._preview_current)
-        self.configPanel.keyField.lineEdit.textChanged.connect(lambda text: cfg.set(cfg.dubbing_api_key, text))
+        self.configPanel.keyField.lineEdit.textChanged.connect(self._on_api_key_changed)
         self.configPanel.baseField.lineEdit.textChanged.connect(lambda text: cfg.set(cfg.dubbing_api_base, text))
         self.configPanel.modelCombo.currentTextChanged.connect(lambda text: cfg.set(cfg.dubbing_model, text))
 
     def showEvent(self, event):
         super().showEvent(event)
         self._on_provider_changed(cfg.dubbing_provider.value)
+
+    def _on_api_key_changed(self, text: str):
+        cfg.set(cfg.dubbing_api_key, text)
+        self._refresh_provider_status()
 
     def _on_provider_changed(self, provider: str):
         cfg.set(cfg.dubbing_provider, provider)
@@ -389,12 +393,13 @@ class DubbingInterface(ScrollArea):
             cfg.set(cfg.dubbing_voice, preset.voice)
             cfg.set(cfg.dubbing_model, preset.model)
 
-        self.configPanel.descLabel.setText(option.description)
+        self._refresh_provider_status(option)
         self.configPanel.setMinimumHeight(236 if option.needs_api_key else 126)
         self.configPanel.keyField.setVisible(option.needs_api_key)
         self.configPanel.baseField.setVisible(option.needs_api_key)
         self.configPanel.modelLabel.setVisible(option.needs_api_key)
         self.configPanel.modelCombo.setVisible(option.needs_api_key)
+
         self.configPanel.keyField.lineEdit.setText(cfg.dubbing_api_key.value)
         self.configPanel.baseField.lineEdit.setText(cfg.dubbing_api_base.value)
         self.configPanel.modelCombo.blockSignals(True)
@@ -419,20 +424,40 @@ class DubbingInterface(ScrollArea):
         self._render_voice_cards(provider)
         self.expandLayout.update()
 
+    def _refresh_provider_status(self, option=None):
+        option = option or get_provider_option(cfg.dubbing_provider.value)
+        api_key = cfg.dubbing_api_key.value.strip()
+        if option.needs_api_key and not api_key:
+            self.configPanel.descLabel.setText(
+                self.tr("{desc} 请先填写 API Key 后再测试真实服务。").format(desc=option.description)
+            )
+            self.configPanel.testButton.setText(self.tr("填写 Key 后测试"))
+            self.configPanel.testButton.setEnabled(False)
+        else:
+            self.configPanel.descLabel.setText(option.description)
+            self.configPanel.testButton.setText(self.tr("测试配音"))
+            self.configPanel.testButton.setEnabled(True)
+
     def _render_voice_cards(self, provider: str):
-        while self.voiceGrid.count():
-            item = self.voiceGrid.takeAt(0)
-            if widget := item.widget():
-                widget.setParent(None)
-                widget.deleteLater()
+        self.voiceLayout.removeWidget(self.voiceGridWidget)
+        self.voiceGridWidget.setParent(None)
+        self.voiceGridWidget.deleteLater()
+        self.voiceGridWidget = QWidget(self.voicePanel)
+        self.voiceGrid = QGridLayout(self.voiceGridWidget)
+        self.voiceGrid.setContentsMargins(0, 0, 0, 0)
+        self.voiceGrid.setHorizontalSpacing(12)
+        self.voiceGrid.setVerticalSpacing(12)
+        self.voiceLayout.addWidget(self.voiceGridWidget)
         self.voice_cards = []
         voices = get_provider_voices(provider)
         self.voiceCountLabel.setText(self.tr("{count} 个音色").format(count=len(voices)))
         columns = 2
         rows = max(1, (len(voices) + columns - 1) // columns)
-        self.voiceGridWidget.setMinimumHeight(rows * 146 + (rows - 1) * 12)
-        self.voicePanel.setMinimumHeight(rows * 146 + (rows - 1) * 12 + 36)
-        self.bodyPanel.setMinimumHeight(rows * 146 + (rows - 1) * 12 + 42)
+        grid_height = rows * 146 + (rows - 1) * 12
+        content_height = grid_height + 42
+        self.voiceGridWidget.setFixedHeight(grid_height)
+        self.voicePanel.setFixedHeight(content_height)
+        self.bodyPanel.setFixedHeight(max(content_height, self.sidePanel.sizeHint().height()))
         for index, voice in enumerate(voices):
             card = VoiceTile(voice, self.voiceGridWidget)
             card.previewButton.clicked.connect(lambda _=False, p=voice.preset, b=card.previewButton: self._preview(p, b))
@@ -492,8 +517,7 @@ class DubbingInterface(ScrollArea):
         self.preview_thread.start()
 
     def _reset_preview_buttons(self):
-        self.configPanel.testButton.setEnabled(True)
-        self.configPanel.testButton.setText(self.tr("测试配音"))
+        self._refresh_provider_status()
         self.currentPanel.previewButton.setEnabled(True)
         self.currentPanel.previewButton.setText(self.tr("试听当前"))
         if self._active_preview_button and self._active_preview_button is not self.currentPanel.previewButton:
