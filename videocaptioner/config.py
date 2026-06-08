@@ -102,6 +102,3 @@ if not _IS_DEV:
 for _path in [FASTER_WHISPER_PATH, BIN_PATH, BUNDLED_BIN_PATH]:
     if _path.exists():
         os.environ["PATH"] = str(_path) + os.pathsep + os.environ["PATH"]
-
-if (BIN_PATH / "vlc").exists():
-    os.environ["PYTHON_VLC_MODULE_PATH"] = str(BIN_PATH / "vlc")

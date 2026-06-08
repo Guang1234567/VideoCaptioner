@@ -39,10 +39,17 @@ def main():
     # Suppress qfluentwidgets ad
     with open(os.devnull, "w") as _devnull:
         sys.stdout, _stdout = _devnull, sys.stdout
-        from qfluentwidgets import FluentTranslator, setTheme, setThemeColor
+        from qfluentwidgets import FluentTranslator, Theme, setTheme, setThemeColor
         sys.stdout = _stdout
 
-    from videocaptioner.ui.common.config import cfg
+    from videocaptioner.ui.common.config import ThemeMode, cfg
+
+    def _to_qfluent_theme(theme: ThemeMode) -> Theme:
+        if theme == ThemeMode.LIGHT:
+            return Theme.LIGHT
+        if theme == ThemeMode.AUTO:
+            return Theme.AUTO
+        return Theme.DARK
 
     # Qt platform plugin path
     lib_folder = "Lib" if platform.system() == "Windows" else "lib"
@@ -80,7 +87,7 @@ def main():
     _patch_qfluent_font_fallback()
     app = QApplication(sys.argv)
     app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings, True)  # type: ignore
-    setTheme(cfg.themeMode.value)
+    setTheme(_to_qfluent_theme(cfg.themeMode.value))
     setThemeColor(cfg.themeColor.value)
 
     from videocaptioner.ui.view.main_window import MainWindow

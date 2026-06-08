@@ -70,14 +70,12 @@ def theme_color_hex() -> str:
 
 
 def is_dark_theme() -> bool:
-    from qfluentwidgets import Theme
-
-    from videocaptioner.ui.common.config import cfg
+    from videocaptioner.ui.common.config import ThemeMode, cfg
 
     theme = cfg.themeMode.value
-    if theme == Theme.DARK:
+    if theme == ThemeMode.DARK:
         return True
-    if theme == Theme.LIGHT:
+    if theme == ThemeMode.LIGHT:
         return False
 
     app = QApplication.instance()

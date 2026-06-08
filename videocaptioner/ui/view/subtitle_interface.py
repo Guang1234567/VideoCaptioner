@@ -2,7 +2,6 @@
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -34,7 +33,6 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF
 
-from videocaptioner.config import SUBTITLE_STYLE_PATH
 from videocaptioner.core.asr.asr_data import ASRData
 from videocaptioner.core.constant import (
     INFOBAR_DURATION_ERROR,
@@ -52,7 +50,6 @@ from videocaptioner.core.subtitle import get_subtitle_style
 from videocaptioner.core.translate.types import TargetLanguage
 from videocaptioner.core.utils.platform_utils import open_folder, reveal_in_explorer
 from videocaptioner.ui.common.config import cfg
-from videocaptioner.ui.common.signal_bus import signalBus
 from videocaptioner.ui.common.theme_tokens import app_palette, rgba
 from videocaptioner.ui.task_factory import TaskFactory
 from videocaptioner.ui.thread.subtitle_thread import RetranslateThread, SubtitleThread
@@ -325,9 +322,6 @@ class SubtitleInterface(QWidget):
             Action(FIF.SETTING, "", triggered=self.show_subtitle_settings)
         )
 
-        # 添加视频播放按钮
-        # self.command_bar.addAction(Action(FIF.VIDEO, "", triggered=self.show_video_player))
-
         # 添加打开文件夹按钮
         self.command_bar.addAction(
             Action(FIF.FOLDER, "", triggered=self.on_open_folder_clicked)
@@ -452,8 +446,6 @@ class SubtitleInterface(QWidget):
         )
         self._connect_config_signal(cfg.need_optimize, self.on_subtitle_optimization_changed)
         self._connect_config_signal(cfg.need_translate, self.on_subtitle_translation_changed)
-        # self.subtitle_setting_button.clicked.connect(self.show_subtitle_settings)
-        # self.video_player_button.clicked.connect(self.show_video_player)
 
     def _connect_config_signal(self, option, handler: Callable) -> None:
         option.valueChanged.connect(handler)
@@ -750,57 +742,9 @@ class SubtitleInterface(QWidget):
             if setting_interface.setCurrentPage("translate"):
                 window.switchTo(setting_interface)  # type: ignore[attr-defined]
 
-    def show_video_player(self) -> None:
-        """显示视频播放器窗口"""
-        # 创建视频播放器窗口（延迟导入，因为vlc是可选依赖）
-        from videocaptioner.ui.components.video_widget import VideoWidget
-
-        self.video_player = VideoWidget()
-        self.video_player.resize(800, 600)
-
-        def signal_update() -> None:
-            if not self.model._data:
-                return
-            ass_style_name = cfg.subtitle_style_name.value
-            ass_style_path = SUBTITLE_STYLE_PATH / f"{ass_style_name}.txt"
-            if ass_style_path.exists():
-                subtitle_style_srt = ass_style_path.read_text(encoding="utf-8")
-            else:
-                subtitle_style_srt = None
-            temp_srt_path = os.path.join(tempfile.gettempdir(), "temp_subtitle.ass")
-            asr_data = ASRData.from_json(self.model._data)
-            asr_data.save(
-                temp_srt_path,
-                layout=cfg.subtitle_layout.value,
-                ass_style=subtitle_style_srt or "",
-            )
-            signalBus.add_subtitle(temp_srt_path)
-
-        # 如果有字幕文件,则添加字幕
-        signal_update()
-
-        cfg.subtitle_layout.valueChanged.connect(lambda _value: signal_update())
-        self.model.dataChanged.connect(signal_update)
-        self.model.layoutChanged.connect(signal_update)
-
-        # 如果有关联的视频文件,则自动加载
-        # Note: SubtitleTask doesn't have file_path attribute
-        # if self.task and hasattr(self.task, "file_path") and self.task.file_path:
-        #     self.video_player.setVideo(QUrl.fromLocalFile(self.task.file_path))
-
-        self.video_player.show()
-        self.video_player.play()
-
     def on_subtitle_clicked(self, index: QModelIndex) -> None:
-        row = index.row()
-        item = list(self.model._data.values())[row]
-        start_time = item["start_time"]  # 毫秒
-        end_time = (
-            item["end_time"] - 50
-            if item["end_time"] - 50 > start_time
-            else item["end_time"]
-        )
-        signalBus.play_video_segment(start_time, end_time)
+        if index.isValid():
+            self.subtitle_table.selectRow(index.row())
 
     def show_context_menu(self, pos) -> None:
         """显示右键菜单"""

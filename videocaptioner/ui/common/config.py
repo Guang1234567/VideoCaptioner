@@ -5,7 +5,6 @@ from typing import Any, Callable
 
 from PyQt5.QtCore import QLocale
 from PyQt5.QtGui import QColor
-from qfluentwidgets import Theme
 
 from videocaptioner.config import WORK_PATH
 from videocaptioner.core.application.app_config import (
@@ -55,6 +54,12 @@ from videocaptioner.ui.common.settings_state import (
 DEFAULT_THEME_COLOR = "#ff28f08b"
 
 
+class ThemeMode(Enum):
+    LIGHT = "Light"
+    DARK = "Dark"
+    AUTO = "Auto"
+
+
 class Language(Enum):
     """软件语言"""
 
@@ -97,13 +102,13 @@ class Config(SettingsState):
 
     # ------------------- UI 外观配置 -------------------
     themeMode = ChoiceSettingField(
-        "QFluentWidgets",
+        "UI",
         "ThemeMode",
-        Theme.DARK,
-        ChoiceValidator(Theme),
-        EnumSettingSerializer(Theme),
+        ThemeMode.DARK,
+        ChoiceValidator(ThemeMode),
+        EnumSettingSerializer(ThemeMode),
     )
-    themeColor = SettingField("QFluentWidgets", "ThemeColor", QColor(DEFAULT_THEME_COLOR))
+    themeColor = SettingField("UI", "ThemeColor", QColor(DEFAULT_THEME_COLOR))
 
     # LLM配置
     llm_service = ChoiceSettingField(
@@ -500,11 +505,12 @@ def _video_quality_to_key(value: Any) -> str:
     return VIDEO_QUALITY_KEYS.get(value, "medium")
 
 
-def _theme_from_toml(value: Any) -> Theme:
-    try:
-        return Theme(str(value or "Dark"))
-    except ValueError:
-        return Theme.DARK
+def _theme_from_toml(value: Any) -> ThemeMode:
+    raw = str(value or "Dark").strip().lower()
+    for theme in ThemeMode:
+        if theme.value.lower() == raw or theme.name.lower() == raw:
+            return theme
+    return ThemeMode.DARK
 
 
 def _theme_to_toml(value: Any) -> str:
@@ -805,7 +811,7 @@ def _install_shared_config_sync() -> None:
 
 
 cfg = Config()
-cfg.themeMode.value = Theme.DARK
+cfg.themeMode.value = ThemeMode.DARK
 cfg.themeColor.value = QColor(DEFAULT_THEME_COLOR)
 _load_shared_config_to_state()
 _install_shared_config_sync()

@@ -7,7 +7,7 @@ from typing import Any
 from PyQt5.QtCore import QThread, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QColor, QDesktopServices
 from PyQt5.QtWidgets import QColorDialog, QFileDialog, QHBoxLayout, QSizePolicy, QWidget
-from qfluentwidgets import InfoBar, setTheme, setThemeColor
+from qfluentwidgets import InfoBar, Theme, setTheme, setThemeColor
 
 from videocaptioner.config import AUTHOR, FEEDBACK_URL, HELP_URL, RELEASE_URL, VERSION, YEAR
 from videocaptioner.core.asr.fun_asr import check_fun_asr_connection
@@ -30,7 +30,7 @@ from videocaptioner.core.speech import (
     create_speech_synthesizer,
 )
 from videocaptioner.core.utils.cache import disable_cache, enable_cache
-from videocaptioner.ui.common.config import DEFAULT_THEME_COLOR, cfg
+from videocaptioner.ui.common.config import DEFAULT_THEME_COLOR, ThemeMode, cfg
 from videocaptioner.ui.common.dubbing_options import (
     get_provider_option,
     get_provider_voices,
@@ -83,6 +83,14 @@ SETTINGS_PAGE_ALIASES = {
 
 def normalize_settings_page_key(page_key: str) -> str:
     return SETTINGS_PAGE_ALIASES.get(str(page_key or "").strip().lower(), page_key)
+
+
+def _to_qfluent_theme(theme: ThemeMode) -> Theme:
+    if theme == ThemeMode.LIGHT:
+        return Theme.LIGHT
+    if theme == ThemeMode.AUTO:
+        return Theme.AUTO
+    return Theme.DARK
 
 
 class SettingInterface(SettingsShell):
@@ -863,7 +871,7 @@ class SettingInterface(SettingsShell):
 
     def _connect_signals(self) -> None:
         cfg.appRestartSig.connect(self._show_restart_tip)
-        cfg.themeChanged.connect(setTheme)
+        cfg.themeChanged.connect(lambda theme: setTheme(_to_qfluent_theme(theme)))
         cfg.themeChanged.connect(lambda _theme: self._sync_visual_style())
         cfg.themeColorChanged.connect(self._apply_theme_color)
         cfg.themeColorChanged.connect(lambda _color: self._sync_visual_style())
