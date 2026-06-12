@@ -83,13 +83,21 @@ class AssPreviewThread(QThread):
         self.bg_image_path = bg_image_path
 
     def run(self):
-        preview_path = render_ass_preview(
-            style_str=self.style_str,
-            preview_text=self.preview_text,
-            bg_image_path=self.bg_image_path,
-            width=self.width,
-            height=self.height,
-        )
+        # 渲染异常不得 qFatal（QThread.run 裸抛会 abort 整个进程），
+        # 失败打日志、不 emit；与 RoundedBgPreviewThread 同约定。
+        try:
+            preview_path = render_ass_preview(
+                style_str=self.style_str,
+                preview_text=self.preview_text,
+                bg_image_path=self.bg_image_path,
+                width=self.width,
+                height=self.height,
+            )
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+            return
         self.previewReady.emit(preview_path)
 
 
