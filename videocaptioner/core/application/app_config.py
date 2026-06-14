@@ -75,35 +75,7 @@ class SubtitleSettings:
     max_word_count_english: int = 20
     custom_prompt_text: str = ""
     layout: SubtitleLayoutEnum = SubtitleLayoutEnum.TRANSLATE_ON_TOP
-    style_name: str = "default"
-
-
-@dataclass(frozen=True)
-class RoundedSubtitleStyle:
-    font_name: str = "Noto Sans SC"
-    font_size: int = 52
-    bg_color: str = "#191919C8"
-    text_color: str = "#FFFFFF"
-    corner_radius: int = 12
-    padding_h: int = 28
-    padding_v: int = 14
-    margin_bottom: int = 60
-    line_spacing: int = 10
-    letter_spacing: int = 0
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "font_name": self.font_name,
-            "font_size": self.font_size,
-            "bg_color": self.bg_color,
-            "text_color": self.text_color,
-            "corner_radius": self.corner_radius,
-            "padding_h": self.padding_h,
-            "padding_v": self.padding_v,
-            "margin_bottom": self.margin_bottom,
-            "line_spacing": self.line_spacing,
-            "letter_spacing": self.letter_spacing,
-        }
+    style_name: str = "ass/default"
 
 
 @dataclass(frozen=True)
@@ -111,9 +83,8 @@ class SynthesisSettings:
     need_video: bool = True
     soft_subtitle: bool = False
     video_quality: VideoQualityEnum = VideoQualityEnum.MEDIUM
-    use_subtitle_style: bool = False
     render_mode: SubtitleRenderModeEnum = SubtitleRenderModeEnum.ROUNDED_BG
-    rounded_style: RoundedSubtitleStyle = field(default_factory=RoundedSubtitleStyle)
+    style_id: str = "rounded/default"
 
 
 @dataclass(frozen=True)

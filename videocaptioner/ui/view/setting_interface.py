@@ -596,14 +596,6 @@ class SettingInterface(SettingsShell):
         )
         synth_group.addRow(
             SettingRow(
-                self.tr("使用字幕样式"),
-                self.tr("开启后使用样式页配置渲染字幕。"),
-                BoundSwitch(cfg.use_subtitle_style, synth_group),
-                synth_group,
-            )
-        )
-        synth_group.addRow(
-            SettingRow(
                 self.tr("字幕布局"),
                 self.tr("选择单语、双语以及原文译文位置。"),
                 BoundComboBox(

@@ -1,6 +1,6 @@
 {
-  "name": "vertical",
-  "description": "Vertical/portrait video layout with high bottom margin",
+  "name": "竖屏留白",
+  "description": "更高底部边距，适合 9:16 视频",
   "mode": "ass",
   "font_name": "Noto Sans SC",
   "font_size": 34,

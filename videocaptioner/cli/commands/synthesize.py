@@ -10,10 +10,12 @@ from videocaptioner.cli import output
 from videocaptioner.cli.validators import validate_synthesize
 from videocaptioner.core.application.config_store import get
 from videocaptioner.core.subtitle.style_manager import (
-    StyleMode,
-    SubtitleStyle,
+    StyleSource,
+    SubtitleRenderer,
     available_style_names,
     load_style,
+    normalize_style_id,
+    preset_from_json,
 )
 
 EncodePreset = Literal[
@@ -65,7 +67,9 @@ def _resolve_style(config: dict, verbose: bool) -> tuple:
             return None, None, None, None, None
 
     # Load base style from preset
-    style = load_style(style_name, mode=render_mode)
+    style_id = normalize_style_id(style_name, render_mode)
+    renderer = SubtitleRenderer.ROUNDED if render_mode == "rounded" else SubtitleRenderer.ASS
+    style = load_style(style_id, renderer=renderer)
     if style is None:
         names = available_style_names()
         output.error(f"Style preset not found: '{style_name}'")
@@ -74,26 +78,18 @@ def _resolve_style(config: dict, verbose: bool) -> tuple:
         output.hint("Run 'videocaptioner style' to see all options")
         return None, None, None, None, None
 
-    # Mode mismatch
-    if render_mode == "rounded" and style.mode == StyleMode.ASS:
-        output.warn(f"'{style.name}' is an ASS preset. Switching to default rounded style.")
-        style = load_style("default", mode="rounded") or style
-    elif render_mode == "ass" and style.mode == StyleMode.ROUNDED:
-        output.warn(f"'{style.name}' is a rounded preset. Switching to default ASS style.")
-        style = load_style("default", mode="ass") or style
-
     # Apply --style-override on top of base style
     if override_dict:
         # Auto-detect mode from override fields
         if any(k in override_dict for k in ("bg_color", "text_color", "corner_radius")):
             if render_mode == "ass":
                 render_mode = "rounded"
-                # Reload with rounded base if currently ASS
-                if style.mode == StyleMode.ASS:
-                    style = load_style("default", mode="rounded") or style
+                renderer = SubtitleRenderer.ROUNDED
+                style = load_style("rounded/default", renderer=renderer) or style
         base = style.to_json_dict()
         base.update(override_dict)
-        style = SubtitleStyle.from_json(base)
+        base["id"] = normalize_style_id(base.get("id") or style.id, render_mode)
+        style = preset_from_json(base, source=StyleSource.USER, renderer_hint=renderer)
 
     # Print final style config
     if verbose:

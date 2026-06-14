@@ -320,7 +320,7 @@ cookies / 风控等待等修复建议。
 
 ### 配置文件
 
-位置：`~/.config/videocaptioner/config.toml`（macOS/Linux）
+位置：VideoCaptioner AppData 目录下的 `config.toml`。可运行 `videocaptioner config path` 查看当前路径。
 
 推荐先运行：
 

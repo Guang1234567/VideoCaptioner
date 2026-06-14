@@ -62,6 +62,18 @@ def _write_sample_srt(path: Path) -> None:
     )
 
 
+def _write_smoke_config(path: Path) -> None:
+    path.write_text(
+        "[transcribe]\n"
+        'asr = "bijian"\n\n'
+        "[dubbing]\n"
+        'provider = "edge"\n'
+        'preset = "edge-cn-female"\n'
+        'voice = "zh-CN-XiaoxiaoNeural"\n',
+        encoding="utf-8",
+    )
+
+
 def _create_sample_video(ffmpeg: Path, output: Path) -> None:
     _run([
         str(ffmpeg),
@@ -118,9 +130,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="videocaptioner-smoke-") as tmp:
         tmp_path = Path(tmp)
         env = os.environ.copy()
-        env["PATH"] = os.defpath
+        env["PATH"] = str(ffmpeg.parent) + os.pathsep + os.defpath
+        env["VIDEOCAPTIONER_CONFIG_FILE"] = str(tmp_path / "config.toml")
         env["VIDEOCAPTIONER_LLM_API_KEY"] = ""
         env["VIDEOCAPTIONER_TTS_API_KEY"] = ""
+        _write_smoke_config(Path(env["VIDEOCAPTIONER_CONFIG_FILE"]))
 
         video = tmp_path / "sample.mp4"
         subtitle = tmp_path / "sample.srt"

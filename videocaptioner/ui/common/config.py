@@ -298,7 +298,6 @@ class Config(SettingsState):
         ChoiceValidator(VideoQualityEnum),
         EnumSettingSerializer(VideoQualityEnum),
     )
-    use_subtitle_style = SettingField("Video", "UseSubtitleStyle", False, BoolValidator())
 
     # ------------------- 配音配置 -------------------
     dubbing_enabled = SettingField("Dubbing", "Enabled", False, BoolValidator())
@@ -341,7 +340,7 @@ class Config(SettingsState):
     dubbing_clone_text = SettingField("Dubbing", "CloneText", "")
 
     # ------------------- 字幕样式配置 -------------------
-    subtitle_style_name = SettingField("SubtitleStyle", "StyleName", "default")
+    subtitle_style_name = SettingField("SubtitleStyle", "StyleName", "rounded/default")
     subtitle_layout = ChoiceSettingField(
         "SubtitleStyle",
         "Layout",
@@ -358,29 +357,6 @@ class Config(SettingsState):
         SubtitleRenderModeEnum.ROUNDED_BG,
         ChoiceValidator(SubtitleRenderModeEnum),
         EnumSettingSerializer(SubtitleRenderModeEnum),
-    )
-
-    # 圆角背景模式配置
-    rounded_bg_font_name = SettingField("RoundedBgStyle", "FontName", "Noto Sans SC")
-    rounded_bg_font_size = RangeSettingField(
-        "RoundedBgStyle", "FontSize", 52, RangeValidator(16, 120)
-    )
-    # 背景色：深灰半透明 (R=25, G=25, B=25, A=200)
-    rounded_bg_color = SettingField("RoundedBgStyle", "BgColor", "#191919C8")
-    rounded_bg_text_color = SettingField("RoundedBgStyle", "TextColor", "#FFFFFF")
-    rounded_bg_corner_radius = RangeSettingField(
-        "RoundedBgStyle", "CornerRadius", 12, RangeValidator(0, 50)
-    )
-    rounded_bg_padding_h = RangeSettingField("RoundedBgStyle", "PaddingH", 28, RangeValidator(4, 100))
-    rounded_bg_padding_v = RangeSettingField("RoundedBgStyle", "PaddingV", 14, RangeValidator(4, 50))
-    rounded_bg_margin_bottom = RangeSettingField(
-        "RoundedBgStyle", "MarginBottom", 60, RangeValidator(20, 300)
-    )
-    rounded_bg_line_spacing = RangeSettingField(
-        "RoundedBgStyle", "LineSpacing", 10, RangeValidator(0, 50)
-    )
-    rounded_bg_letter_spacing = RangeSettingField(
-        "RoundedBgStyle", "LetterSpacing", 0, RangeValidator(0, 20)
     )
 
     # ------------------- 保存配置 -------------------
@@ -770,7 +746,6 @@ def _bindings() -> list[SharedConfigBinding]:
         SharedConfigBinding(
             cfg.video_quality, "synthesize.quality", _video_quality_to_key, quality_from_cli
         ),
-        SharedConfigBinding(cfg.use_subtitle_style, "synthesize.use_subtitle_style"),
         SharedConfigBinding(cfg.subtitle_style_name, "synthesize.style"),
         SharedConfigBinding(
             cfg.subtitle_layout, "synthesize.layout", _subtitle_layout_to_key, layout_from_cli
@@ -781,16 +756,6 @@ def _bindings() -> list[SharedConfigBinding]:
             _render_mode_to_key,
             render_mode_from_cli,
         ),
-        SharedConfigBinding(cfg.rounded_bg_font_name, "synthesize.rounded.font_name"),
-        SharedConfigBinding(cfg.rounded_bg_font_size, "synthesize.rounded.font_size"),
-        SharedConfigBinding(cfg.rounded_bg_color, "synthesize.rounded.bg_color"),
-        SharedConfigBinding(cfg.rounded_bg_text_color, "synthesize.rounded.text_color"),
-        SharedConfigBinding(cfg.rounded_bg_corner_radius, "synthesize.rounded.corner_radius"),
-        SharedConfigBinding(cfg.rounded_bg_padding_h, "synthesize.rounded.padding_h"),
-        SharedConfigBinding(cfg.rounded_bg_padding_v, "synthesize.rounded.padding_v"),
-        SharedConfigBinding(cfg.rounded_bg_margin_bottom, "synthesize.rounded.margin_bottom"),
-        SharedConfigBinding(cfg.rounded_bg_line_spacing, "synthesize.rounded.line_spacing"),
-        SharedConfigBinding(cfg.rounded_bg_letter_spacing, "synthesize.rounded.letter_spacing"),
         SharedConfigBinding(cfg.dubbing_enabled, "dubbing.enabled"),
         SharedConfigBinding(cfg.dubbing_provider, "dubbing.provider"),
         SharedConfigBinding(cfg.dubbing_preset, "dubbing.preset"),

@@ -1,6 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QUrl, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter
 from PyQt5.QtMultimedia import (
     QAudioEncoderSettings,
@@ -487,6 +489,7 @@ class DubbingInterface(ScrollArea):
         self.preview_thread: VoicePreviewThread | None = None
         self.player = QMediaPlayer(self)
         self.player.stateChanged.connect(self._on_player_state_changed)
+        self.player.error.connect(self._on_player_error)
         self.recorder = QAudioRecorder(self)
         self._recording_output_path: Path | None = None
         self.scrollWidget = QWidget()
@@ -495,6 +498,8 @@ class DubbingInterface(ScrollArea):
         self.genderFilter = "全部"
         self._active_preview_button: QWidget | None = None  # 合成中的按钮
         self._playing_button: QWidget | None = None  # 播放中的按钮（可点停止）
+        self._playing_path = ""
+        self._fallback_player_process: subprocess.Popen | None = None
         self._active_preview_cache_key: tuple[str, ...] | None = None
         self._preview_cache: dict[tuple[str, ...], str] = {}
 
@@ -900,13 +905,34 @@ class DubbingInterface(ScrollArea):
         if self._playing_button is not None:
             self._set_preview_button(self._playing_button, "idle")
             self._playing_button = None
+        self._playing_path = ""
         self.player.stop()
+        self._stop_fallback_player()
 
     def _on_player_state_changed(self, state):
         # 自然播完（或外部停止）：把"停止"复原成"试听"
         if state == QMediaPlayer.StoppedState and self._playing_button is not None:
             self._set_preview_button(self._playing_button, "idle")
             self._playing_button = None
+            self._playing_path = ""
+
+    def _on_player_error(self, error):
+        if not self._playing_path or error == QMediaPlayer.NoError:
+            return
+        button = self._playing_button
+        path = self._playing_path
+        self.player.stop()
+        if self._play_audio_with_external_player(path, button):
+            return
+        self._set_preview_button(button, "idle")
+        self._playing_button = None
+        self._playing_path = ""
+        InfoBar.error(
+            self.tr("播放失败"),
+            self.tr("当前系统缺少音频解码组件，且未找到可用的外部播放器。"),
+            duration=INFOBAR_DURATION_ERROR,
+            parent=self,
+        )
 
     def _preview(
         self,
@@ -988,8 +1014,65 @@ class DubbingInterface(ScrollArea):
         self._stop_playback()
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(str(playable_path))))
         self._playing_button = button
+        self._playing_path = str(playable_path)
         self._set_preview_button(button, "playing")
         self.player.play()
+
+    def _play_audio_with_external_player(self, path: str, button: QWidget | None = None) -> bool:
+        ffplay = shutil.which("ffplay")
+        if ffplay:
+            command = [
+                ffplay,
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "error",
+                path,
+            ]
+        else:
+            paplay = shutil.which("paplay")
+            if not paplay:
+                return False
+            command = [paplay, path]
+        self._stop_fallback_player()
+        try:
+            self._fallback_player_process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            self._fallback_player_process = None
+            return False
+        self._playing_button = button
+        self._playing_path = path
+        self._set_preview_button(button, "playing")
+        QTimer.singleShot(300, self._poll_fallback_player)
+        return True
+
+    def _poll_fallback_player(self):
+        process = self._fallback_player_process
+        if process is None:
+            return
+        if process.poll() is None:
+            QTimer.singleShot(300, self._poll_fallback_player)
+            return
+        self._fallback_player_process = None
+        if self._playing_button is not None:
+            self._set_preview_button(self._playing_button, "idle")
+        self._playing_button = None
+        self._playing_path = ""
+
+    def _stop_fallback_player(self):
+        process = self._fallback_player_process
+        self._fallback_player_process = None
+        if process is None or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
 
     def _preview_cache_key(
         self,

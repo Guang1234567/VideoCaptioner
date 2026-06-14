@@ -577,7 +577,10 @@ def _check_settings(app) -> None:
     widget.transcribeModelControl.setCurrentText(TranscribeModelEnum.WHISPER_CPP.value)
     app.processEvents()
     assert cfg.transcribe_model.value == TranscribeModelEnum.WHISPER_CPP
-    assert widget.whisperCppModelRow.isVisible()
+    # The model selector is visible only when at least one local whisper.cpp
+    # model is installed. Without downloaded models, the management row is the
+    # expected user-facing entry point.
+    assert widget.whisperCppModelRow.isVisible() or widget.whisperCppModelEntryRow.isVisible()
     assert not widget.whisperApiKeyRow.isVisible()
 
     # 配音页：SiliconFlow 显示 key/model 行，Edge 隐藏；key 输入去首尾空白和换行
@@ -1073,19 +1076,19 @@ def _check_video_synthesis(output_dir: Path, app, screenshot_names: list[str]) -
     assert widget.generatePanel.subtitleCard.isChecked()
     assert not widget.generatePanel.dubbingCard.isChecked()
 
-    # 字幕方式互锁：软字幕自动关闭字幕样式并锁定渲染模式。
-    cfg.set(cfg.use_subtitle_style, True)
-    widget.generatePanel.styleSwitch.setChecked(True)
+    # 字幕方式互锁：软字幕不烧录样式，渲染模式和样式入口都应隐藏/锁定。
     widget.generatePanel.subtitleModeSelect.setCurrentText(SUBTITLE_MODE_LABELS[True])
     app.processEvents()
     assert cfg.soft_subtitle.value
-    assert not cfg.use_subtitle_style.value
     assert not widget.generatePanel.renderModeSelect.isEnabled()
+    assert not widget.generatePanel.renderModeCard.isVisible()
+    assert not widget.generatePanel.stylePageCard.isVisible()
     widget.generatePanel.subtitleModeSelect.setCurrentText(SUBTITLE_MODE_LABELS[False])
-    widget.generatePanel.styleSwitch.setChecked(True)
     app.processEvents()
     assert not cfg.soft_subtitle.value
     assert widget.generatePanel.renderModeSelect.isEnabled()
+    assert widget.generatePanel.renderModeCard.isVisible()
+    assert widget.generatePanel.stylePageCard.isVisible()
 
     # 质量选择与配置同步。
     widget.generatePanel.qualitySelect.setCurrentText(VideoQualityEnum.LOW.value)

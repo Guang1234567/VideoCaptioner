@@ -7,7 +7,6 @@ from videocaptioner.core.application.app_config import (
     AppConfig,
     DubbingSettings,
     LLMSettings,
-    RoundedSubtitleStyle,
     SubtitleSettings,
     SynthesisSettings,
     TranscribeSettings,
@@ -22,6 +21,7 @@ from videocaptioner.core.application.app_config import (
 )
 from videocaptioner.core.application.config_store import get
 from videocaptioner.core.entities import FasterWhisperModelEnum, VadMethodEnum, WhisperModelEnum
+from videocaptioner.core.subtitle.style_manager import normalize_style_id
 
 
 def app_config_from_cli(config: dict) -> AppConfig:
@@ -124,19 +124,10 @@ def app_config_from_cli(config: dict) -> AppConfig:
             need_video=bool(get(config, "synthesize.need_video", True)),
             soft_subtitle=bool(get(config, "synthesize.soft_subtitle", subtitle_mode != "hard")),
             video_quality=quality_from_cli(get(config, "synthesize.quality", "medium")),
-            use_subtitle_style=bool(get(config, "synthesize.use_subtitle_style", False)),
             render_mode=render_mode_from_cli(get(config, "synthesize.render_mode", "rounded")),
-            rounded_style=RoundedSubtitleStyle(
-                font_name=str(get(config, "synthesize.rounded.font_name", "Noto Sans SC") or ""),
-                font_size=int(get(config, "synthesize.rounded.font_size", 52)),
-                bg_color=str(get(config, "synthesize.rounded.bg_color", "#191919C8") or ""),
-                text_color=str(get(config, "synthesize.rounded.text_color", "#FFFFFF") or ""),
-                corner_radius=int(get(config, "synthesize.rounded.corner_radius", 12)),
-                padding_h=int(get(config, "synthesize.rounded.padding_h", 28)),
-                padding_v=int(get(config, "synthesize.rounded.padding_v", 14)),
-                margin_bottom=int(get(config, "synthesize.rounded.margin_bottom", 60)),
-                line_spacing=int(get(config, "synthesize.rounded.line_spacing", 10)),
-                letter_spacing=int(get(config, "synthesize.rounded.letter_spacing", 0)),
+            style_id=normalize_style_id(
+                get(config, "synthesize.style", "default"),
+                get(config, "synthesize.render_mode", "rounded"),
             ),
         ),
         dubbing=DubbingSettings(

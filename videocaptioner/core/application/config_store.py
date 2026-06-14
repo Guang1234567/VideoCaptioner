@@ -8,8 +8,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from platformdirs import user_config_dir
-
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -18,8 +16,9 @@ else:
     except ModuleNotFoundError:
         import tomli as tomllib  # type: ignore[no-redef]
 
-APP_NAME = "videocaptioner"
-_DEFAULT_CONFIG_FILE = Path(user_config_dir(APP_NAME)) / "config.toml"
+from videocaptioner.config import APPDATA_PATH
+
+_DEFAULT_CONFIG_FILE = APPDATA_PATH / "config.toml"
 CONFIG_FILE = Path(os.environ.get("VIDEOCAPTIONER_CONFIG_FILE", str(_DEFAULT_CONFIG_FILE)))
 CONFIG_DIR = CONFIG_FILE.parent
 
@@ -187,21 +186,8 @@ DEFAULTS: Dict[str, Any] = {
         "quality": "medium",
         "layout": "target-above",
         "render_mode": "rounded",
-        "style": "default",
+        "style": "rounded/default",
         "soft_subtitle": False,
-        "use_subtitle_style": False,
-        "rounded": {
-            "font_name": "Noto Sans SC",
-            "font_size": 52,
-            "bg_color": "#191919C8",
-            "text_color": "#FFFFFF",
-            "corner_radius": 12,
-            "padding_h": 28,
-            "padding_v": 14,
-            "margin_bottom": 60,
-            "line_spacing": 10,
-            "letter_spacing": 0,
-        },
     },
     "dubbing": {
         "enabled": False,

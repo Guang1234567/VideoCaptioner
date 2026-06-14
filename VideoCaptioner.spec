@@ -20,7 +20,7 @@ def _data(src: Path, dest: str):
 datas = [
     _data(ROOT / "resource" / "assets", "resource/assets"),
     _data(ROOT / "resource" / "fonts", "resource/fonts"),
-    _data(ROOT / "resource" / "subtitle_style", "resource/subtitle_style"),
+    _data(ROOT / "resource" / "subtitle_styles", "resource/subtitle_styles"),
     _data(ROOT / "resource" / "translations", "resource/translations"),
     _data(ROOT / "videocaptioner" / "core" / "prompts", "videocaptioner/core/prompts"),
 ]

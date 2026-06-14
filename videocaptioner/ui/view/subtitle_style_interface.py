@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -16,11 +15,23 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF
 
-from videocaptioner.config import ASSETS_PATH, SUBTITLE_STYLE_PATH
+from videocaptioner.config import ASSETS_PATH, USER_SUBTITLE_STYLE_PATH
 from videocaptioner.core.constant import INFOBAR_DURATION_SUCCESS, INFOBAR_DURATION_WARNING
 from videocaptioner.core.entities import SubtitleLayoutEnum, SubtitleRenderModeEnum
 from videocaptioner.core.subtitle import get_builtin_fonts, render_ass_preview, render_preview
-from videocaptioner.core.subtitle.style_manager import StyleMode
+from videocaptioner.core.subtitle.style_manager import (
+    AssSecondaryStyle,
+    AssSubtitleStyle,
+    RoundedSubtitleStyle,
+    StyleSource,
+    SubtitleRenderer,
+    SubtitleStylePreset,
+    delete_user_style,
+    list_styles,
+    load_style,
+    normalize_style_id,
+    save_user_style,
+)
 from videocaptioner.core.subtitle.styles import RoundedBgStyle
 from videocaptioner.core.utils.platform_utils import open_folder
 from videocaptioner.ui.common.app_icons import AppIcon
@@ -152,6 +163,8 @@ class SubtitleStyleInterface(QWidget):
         self.preview_thread: QThread | None = None
         self._preview_threads: list[QThread] = []
         self._preview_generation = 0
+        self._style_display_to_id: dict[str, str] = {}
+        self._style_id_to_display: dict[str, str] = {}
 
         # 创建主布局
         self.hBoxLayout = QHBoxLayout(self)
@@ -254,10 +267,17 @@ class SubtitleStyleInterface(QWidget):
             self.tr("打开样式文件夹"),
             self.tr("在文件管理器中打开样式文件夹"),
         )
+        self.deleteStyleButton = PushFormCard(
+            self.tr("删除样式"),
+            FIF.DELETE,
+            self.tr("删除样式"),
+            self.tr("仅可删除我的样式"),
+        )
 
         self.previewActionsGroup = FormGroup(self.tr("样式管理"), self.previewBottomWidget)
         self.previewActionsGroup.addCard(self.styleNameComboBox)
         self.previewActionsGroup.addCard(self.newStyleButton)
+        self.previewActionsGroup.addCard(self.deleteStyleButton)
         self.previewActionsGroup.addCard(self.openStyleFolderButton)
         self.previewBottomLayout.addWidget(self.previewActionsGroup)
 
@@ -653,29 +673,6 @@ class SubtitleStyleInterface(QWidget):
         self.roundedFontCard.addItems(all_fonts)
         self.roundedFontCard.comboBox.setMaxVisibleItems(12)
 
-        # 设置圆角背景模式的初始值
-        self.roundedFontSizeCard.spinBox.setValue(cfg.get(cfg.rounded_bg_font_size))
-        self.roundedCornerRadiusCard.spinBox.setValue(
-            cfg.get(cfg.rounded_bg_corner_radius)
-        )
-        self.roundedPaddingHCard.spinBox.setValue(cfg.get(cfg.rounded_bg_padding_h))
-        self.roundedPaddingVCard.spinBox.setValue(cfg.get(cfg.rounded_bg_padding_v))
-        self.roundedMarginBottomCard.spinBox.setValue(
-            cfg.get(cfg.rounded_bg_margin_bottom)
-        )
-        self.roundedLineSpacingCard.spinBox.setValue(
-            cfg.get(cfg.rounded_bg_line_spacing)
-        )
-        self.roundedLetterSpacingCard.spinBox.setValue(
-            cfg.get(cfg.rounded_bg_letter_spacing)
-        )
-
-        # 设置颜色
-        text_color = cfg.get(cfg.rounded_bg_text_color)
-        self.roundedTextColorCard.setColor(QColor(text_color))
-        bg_color = cfg.get(cfg.rounded_bg_color)
-        self.roundedBgColorCard.setColor(self._parseRgbaHex(bg_color))
-
         # 加载样式列表（根据当前模式）
         self._refreshStyleList()
 
@@ -761,6 +758,7 @@ class SubtitleStyleInterface(QWidget):
         # 连接样式切换信号
         self.styleNameComboBox.currentTextChanged.connect(self.loadStyle)
         self.newStyleButton.clicked.connect(self.createNewStyle)
+        self.deleteStyleButton.clicked.connect(self.deleteCurrentStyle)
         self.openStyleFolderButton.clicked.connect(self.on_open_style_folder_clicked)
 
         # 连接字幕排布信号
@@ -776,7 +774,8 @@ class SubtitleStyleInterface(QWidget):
 
     def on_open_style_folder_clicked(self):
         """打开样式文件夹"""
-        open_folder(str(SUBTITLE_STYLE_PATH))
+        USER_SUBTITLE_STYLE_PATH.mkdir(parents=True, exist_ok=True)
+        open_folder(str(USER_SUBTITLE_STYLE_PATH))
 
     def on_subtitle_layout_changed(self, layout: str):
         layout_enum = SubtitleLayoutEnum(layout)
@@ -808,35 +807,7 @@ class SubtitleStyleInterface(QWidget):
         if self._loading_style:
             return
 
-        # 保存圆角背景配置
-        cfg.set(cfg.rounded_bg_font_name, self.roundedFontCard.comboBox.currentText())
-        cfg.set(cfg.rounded_bg_font_size, self.roundedFontSizeCard.spinBox.value())
-        cfg.set(
-            cfg.rounded_bg_corner_radius, self.roundedCornerRadiusCard.spinBox.value()
-        )
-        cfg.set(cfg.rounded_bg_padding_h, self.roundedPaddingHCard.spinBox.value())
-        cfg.set(cfg.rounded_bg_padding_v, self.roundedPaddingVCard.spinBox.value())
-        cfg.set(
-            cfg.rounded_bg_margin_bottom, self.roundedMarginBottomCard.spinBox.value()
-        )
-        cfg.set(
-            cfg.rounded_bg_line_spacing, self.roundedLineSpacingCard.spinBox.value()
-        )
-        cfg.set(
-            cfg.rounded_bg_letter_spacing, self.roundedLetterSpacingCard.spinBox.value()
-        )
-
-        # 保存颜色
-        text_color = self.roundedTextColorCard.colorPicker.color.name()
-        cfg.set(cfg.rounded_bg_text_color, text_color)
-        bg_color = self.roundedBgColorCard.colorPicker.color
-        bg_color_hex = f"#{bg_color.red():02x}{bg_color.green():02x}{bg_color.blue():02x}{bg_color.alpha():02x}"
-        cfg.set(cfg.rounded_bg_color, bg_color_hex)
-
-        # 自动保存当前样式
-        current_style = self.styleNameComboBox.comboBox.currentText()
-        if current_style:
-            self.saveStyle(current_style)
+        self._save_current_edit()
 
         self.updatePreview()
 
@@ -868,34 +839,23 @@ class SubtitleStyleInterface(QWidget):
         # 清空现有列表
         self.styleNameComboBox.comboBox.clear()
 
-        # 获取匹配当前模式的 JSON 样式文件
-        from videocaptioner.core.subtitle.style_manager import style_id_from_filename
-        style_files = []
-        for f in sorted(SUBTITLE_STYLE_PATH.glob("*.json")):
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-                if data.get("mode", "ass") == target_mode:
-                    style_id = style_id_from_filename(f.name)
-                    style_files.append(style_id)
-            except (json.JSONDecodeError, OSError):
-                pass
+        styles = list_styles(renderer=target_mode)
+        styles.sort(key=lambda style: (style.id != f"{target_mode}/default", style.source.value, style.short_id))
+        self._style_display_to_id = {self._style_label(style): style.id for style in styles}
+        self._style_id_to_display = {style.id: self._style_label(style) for style in styles}
+        style_labels = list(self._style_display_to_id.keys())
 
-        # 确保有默认样式
-        if "default" not in style_files:
-            style_files.insert(0, "default")
-            self.saveStyle("default")
-        else:
-            style_files.insert(0, style_files.pop(style_files.index("default")))
-
-        self.styleNameComboBox.comboBox.addItems(style_files)
+        self.styleNameComboBox.comboBox.addItems(style_labels)
 
         # 加载默认样式或配置中保存的样式
-        subtitle_style_name = cfg.get(cfg.subtitle_style_name)
-        if subtitle_style_name in style_files:
-            self.styleNameComboBox.comboBox.setCurrentText(subtitle_style_name)
+        subtitle_style_name = normalize_style_id(cfg.get(cfg.subtitle_style_name), target_mode)
+        if subtitle_style_name in self._style_id_to_display:
+            self.styleNameComboBox.comboBox.setCurrentText(
+                self._style_id_to_display[subtitle_style_name]
+            )
         else:
-            self.styleNameComboBox.comboBox.setCurrentText(style_files[0])
-            subtitle_style_name = style_files[0]
+            self.styleNameComboBox.comboBox.setCurrentText(style_labels[0])
+            subtitle_style_name = self._style_display_to_id[style_labels[0]]
 
         # 恢复信号
         self.styleNameComboBox.comboBox.blockSignals(False)
@@ -938,9 +898,7 @@ class SubtitleStyleInterface(QWidget):
         self.updatePreview()
         current_style = self.styleNameComboBox.comboBox.currentText()
         if current_style:
-            self.saveStyle(current_style)
-        else:
-            self.saveStyle("default")
+            self._save_current_edit()
 
     def selectPreviewImage(self):
         """选择预览背景图片"""
@@ -1134,41 +1092,49 @@ class SubtitleStyleInterface(QWidget):
         self._preview_threads.clear()
         super().closeEvent(event)
 
-    def _resolve_style_path(self, style_name: str) -> Path:
-        """Resolve style name to file path, trying prefixed names."""
+    def _current_renderer_key(self) -> str:
         mode = self._getCurrentRenderMode()
-        prefix = "rounded-" if mode == SubtitleRenderModeEnum.ROUNDED_BG else "ass-"
-        # Try prefixed first, then exact
-        prefixed = SUBTITLE_STYLE_PATH / f"{prefix}{style_name}.json"
-        if prefixed.exists():
-            return prefixed
-        exact = SUBTITLE_STYLE_PATH / f"{style_name}.json"
-        return exact
+        return "rounded" if mode == SubtitleRenderModeEnum.ROUNDED_BG else "ass"
+
+    def _style_label(self, preset: SubtitleStylePreset) -> str:
+        suffix = self.tr("内置") if preset.source == StyleSource.BUILTIN else self.tr("我的")
+        return f"{preset.name} · {suffix}"
+
+    def _style_id_from_combo_text(self, text: str) -> str:
+        return self._style_display_to_id.get(text, text)
+
+    def _is_user_style(self, style_name: str) -> bool:
+        preset = load_style(
+            self._style_id_from_combo_text(style_name),
+            renderer=self._current_renderer_key(),
+        )
+        return bool(preset and preset.source == StyleSource.USER)
 
     def loadStyle(self, style_name):
         """加载指定样式（根据当前渲染模式加载对应格式）"""
-        style_path = self._resolve_style_path(style_name)
-
-        if not style_path.exists():
+        style_id = self._style_id_from_combo_text(style_name)
+        preset = load_style(style_id, renderer=self._current_renderer_key())
+        if preset is None:
             return
 
         self._loading_style = True
 
         mode = self._getCurrentRenderMode()
         if mode == SubtitleRenderModeEnum.ROUNDED_BG:
-            self._loadRoundedBgStyle(style_path)
+            self._loadRoundedBgStyle(preset)
         else:
-            self._loadAssStyle(style_path)
+            self._loadAssStyle(preset)
 
-        cfg.set(cfg.subtitle_style_name, style_name)
+        cfg.set(cfg.subtitle_style_name, preset.id)
         self._loading_style = False
+        self._sync_style_actions()
         self.updatePreview()
 
-    def _loadAssStyle(self, style_path: Path):
+    def _loadAssStyle(self, preset: SubtitleStylePreset):
         """加载 ASS 样式 (.json)"""
-        from videocaptioner.core.subtitle.style_manager import SubtitleStyle
-
-        style = SubtitleStyle.from_file(style_path)
+        if not isinstance(preset.style, AssSubtitleStyle):
+            return
+        style = preset.style
 
         # Primary style
         self.assPrimaryFontCard.setCurrentText(style.font_name)
@@ -1189,31 +1155,21 @@ class SubtitleStyleInterface(QWidget):
             self.assSecondarySpacingCard.spinBox.setValue(sec.spacing)
             self.assSecondaryOutlineSizeCard.spinBox.setValue(sec.outline_width)
 
-    def _loadRoundedBgStyle(self, style_path: Path):
+    def _loadRoundedBgStyle(self, preset: SubtitleStylePreset):
         """加载圆角背景样式 (.json)"""
-        with open(style_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if "font_name" in data:
-            self.roundedFontCard.setCurrentText(data["font_name"])
-        if "font_size" in data:
-            self.roundedFontSizeCard.spinBox.setValue(data["font_size"])
-        if "text_color" in data:
-            self.roundedTextColorCard.setColor(QColor(data["text_color"]))
-        if "bg_color" in data:
-            self.roundedBgColorCard.setColor(self._parseRgbaHex(data["bg_color"]))
-        if "corner_radius" in data:
-            self.roundedCornerRadiusCard.spinBox.setValue(data["corner_radius"])
-        if "padding_h" in data:
-            self.roundedPaddingHCard.spinBox.setValue(data["padding_h"])
-        if "padding_v" in data:
-            self.roundedPaddingVCard.spinBox.setValue(data["padding_v"])
-        if "margin_bottom" in data:
-            self.roundedMarginBottomCard.spinBox.setValue(data["margin_bottom"])
-        if "line_spacing" in data:
-            self.roundedLineSpacingCard.spinBox.setValue(data["line_spacing"])
-        if "letter_spacing" in data:
-            self.roundedLetterSpacingCard.spinBox.setValue(data["letter_spacing"])
+        if not isinstance(preset.style, RoundedSubtitleStyle):
+            return
+        data = preset.style
+        self.roundedFontCard.setCurrentText(data.font_name)
+        self.roundedFontSizeCard.spinBox.setValue(data.font_size)
+        self.roundedTextColorCard.setColor(QColor(data.text_color))
+        self.roundedBgColorCard.setColor(self._parseRgbaHex(data.bg_color))
+        self.roundedCornerRadiusCard.spinBox.setValue(data.corner_radius)
+        self.roundedPaddingHCard.spinBox.setValue(data.padding_h)
+        self.roundedPaddingVCard.spinBox.setValue(data.padding_v)
+        self.roundedMarginBottomCard.spinBox.setValue(data.margin_bottom)
+        self.roundedLineSpacingCard.spinBox.setValue(data.line_spacing)
+        self.roundedLetterSpacingCard.spinBox.setValue(data.letter_spacing)
 
     def createNewStyle(self):
         """创建新样式"""
@@ -1223,8 +1179,8 @@ class SubtitleStyleInterface(QWidget):
             if not style_name:
                 return
 
-            # 检查是否已存在同名样式（使用带前缀的实际路径）
-            if self._resolve_style_path(style_name).exists():
+            style_id = normalize_style_id(style_name, self._current_renderer_key())
+            if load_style(style_id, renderer=self._current_renderer_key()) is not None:
                 InfoBar.warning(
                     title=self.tr("警告"),
                     content=self.tr("样式 ") + style_name + self.tr(" 已存在"),
@@ -1237,11 +1193,13 @@ class SubtitleStyleInterface(QWidget):
                 return
 
             # 保存新样式
-            self.saveStyle(style_name)
+            self.saveStyle(style_id)
 
             # 更新样式列表并选中新样式
-            self.styleNameComboBox.addItem(style_name)
-            self.styleNameComboBox.comboBox.setCurrentText(style_name)
+            self._refreshStyleList()
+            self.styleNameComboBox.comboBox.setCurrentText(
+                self._style_id_to_display.get(style_id, style_id)
+            )
 
             InfoBar.success(
                 title=self.tr("成功"),
@@ -1253,29 +1211,85 @@ class SubtitleStyleInterface(QWidget):
                 parent=self,
             )
 
+    def deleteCurrentStyle(self):
+        style_text = self.styleNameComboBox.comboBox.currentText()
+        style_id = self._style_id_from_combo_text(style_text)
+        if not self._is_user_style(style_id):
+            InfoBar.warning(
+                title=self.tr("无法删除"),
+                content=self.tr("内置样式不能删除，可以基于它新建样式。"),
+                orient=Qt.Horizontal,  # type: ignore
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=INFOBAR_DURATION_WARNING,
+                parent=self,
+            )
+            return
+        delete_user_style(style_id)
+        self._refreshStyleList()
+        InfoBar.success(
+            title=self.tr("已删除"),
+            content=self.tr("样式已删除"),
+            orient=Qt.Horizontal,  # type: ignore
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=INFOBAR_DURATION_SUCCESS,
+            parent=self,
+        )
+
     def saveStyle(self, style_name):
         """保存样式（根据当前渲染模式保存对应格式）"""
-        SUBTITLE_STYLE_PATH.mkdir(parents=True, exist_ok=True)
-
-        mode = self._getCurrentRenderMode()
-        prefix = "rounded-" if mode == SubtitleRenderModeEnum.ROUNDED_BG else "ass-"
-        style_path = SUBTITLE_STYLE_PATH / f"{prefix}{style_name}.json"
-
-        if mode == SubtitleRenderModeEnum.ROUNDED_BG:
-            self._saveRoundedBgStyle(style_path)
+        renderer = self._current_renderer_key()
+        style_id = normalize_style_id(self._style_id_from_combo_text(style_name), renderer)
+        if renderer == SubtitleRenderer.ROUNDED.value:
+            preset = self._rounded_preset_from_ui(style_id)
         else:
-            self._saveAssStyle(style_path)
+            preset = self._ass_preset_from_ui(style_id)
+        save_user_style(preset)
+        self._sync_style_actions()
 
-    def _saveAssStyle(self, style_path: Path):
+    def _save_current_edit(self):
+        """Persist the current controls.
+
+        Built-in presets are read-only. The first edit automatically forks the
+        preset into a user style, switches the combo to that new style, and then
+        saves all subsequent edits there. This keeps preview, synthesis, and
+        next-launch behavior aligned with what the user sees.
+        """
+        current_text = self.styleNameComboBox.comboBox.currentText()
+        if not current_text:
+            return
+        style_id = self._style_id_from_combo_text(current_text)
+        preset = load_style(style_id, renderer=self._current_renderer_key())
+        if preset is not None and preset.source == StyleSource.BUILTIN:
+            style_id = self._unique_user_style_id(preset)
+            self.saveStyle(style_id)
+            self._refreshStyleList()
+            self.styleNameComboBox.comboBox.setCurrentText(
+                self._style_id_to_display.get(style_id, style_id)
+            )
+            cfg.set(cfg.subtitle_style_name, style_id)
+            return
+        self.saveStyle(style_id)
+        cfg.set(cfg.subtitle_style_name, style_id)
+
+    def _unique_user_style_id(self, preset: SubtitleStylePreset) -> str:
+        base = f"{preset.short_id}-custom"
+        renderer = preset.renderer.value
+        candidate = f"{renderer}/{base}"
+        index = 2
+        while load_style(candidate, renderer=renderer) is not None:
+            candidate = f"{renderer}/{base}-{index}"
+            index += 1
+        return candidate
+
+    def _sync_style_actions(self):
+        current = self.styleNameComboBox.comboBox.currentText()
+        self.deleteStyleButton.setEnabled(self._is_user_style(current))
+
+    def _ass_preset_from_ui(self, style_id: str) -> SubtitleStylePreset:
         """保存 ASS 样式 (.json)"""
-        from videocaptioner.core.subtitle.style_manager import (
-            SecondaryStyle,
-            SubtitleStyle,
-            style_id_from_filename,
-        )
-        style = SubtitleStyle(
-            name=style_id_from_filename(style_path.name),
-            mode=StyleMode.ASS,
+        style = AssSubtitleStyle(
             font_name=self.assPrimaryFontCard.comboBox.currentText(),
             font_size=self.assPrimarySizeCard.spinBox.value(),
             primary_color=self.assPrimaryColorCard.colorPicker.color.name(),
@@ -1284,7 +1298,7 @@ class SubtitleStyleInterface(QWidget):
             bold=True,
             spacing=self.assPrimarySpacingCard.spinBox.value(),
             margin_bottom=self.assVerticalSpacingCard.spinBox.value(),
-            secondary=SecondaryStyle(
+            secondary=AssSecondaryStyle(
                 font_name=self.assSecondaryFontCard.comboBox.currentText(),
                 font_size=self.assSecondarySizeCard.spinBox.value(),
                 color=self.assSecondaryColorCard.colorPicker.color.name(),
@@ -1293,32 +1307,37 @@ class SubtitleStyleInterface(QWidget):
                 spacing=self.assSecondarySpacingCard.spinBox.value(),
             ),
         )
-        with open(style_path, "w", encoding="utf-8") as f:
-            json.dump(style.to_json_dict(), f, ensure_ascii=False, indent=2)
+        return SubtitleStylePreset(
+            id=style_id,
+            name=style_id.split("/", 1)[-1],
+            renderer=SubtitleRenderer.ASS,
+            source=StyleSource.USER,
+            style=style,
+        )
 
-    def _saveRoundedBgStyle(self, style_path: Path):
+    def _rounded_preset_from_ui(self, style_id: str) -> SubtitleStylePreset:
         """保存圆角背景样式 (.json)"""
         bg_color = self.roundedBgColorCard.colorPicker.color
         bg_color_hex = f"#{bg_color.red():02x}{bg_color.green():02x}{bg_color.blue():02x}{bg_color.alpha():02x}"
-
-        from videocaptioner.core.subtitle.style_manager import style_id_from_filename
-        data = {
-            "name": style_id_from_filename(style_path.name),
-            "description": "",
-            "mode": "rounded",
-            "font_name": self.roundedFontCard.comboBox.currentText(),
-            "font_size": self.roundedFontSizeCard.spinBox.value(),
-            "text_color": self.roundedTextColorCard.colorPicker.color.name(),
-            "bg_color": bg_color_hex,
-            "corner_radius": self.roundedCornerRadiusCard.spinBox.value(),
-            "padding_h": self.roundedPaddingHCard.spinBox.value(),
-            "padding_v": self.roundedPaddingVCard.spinBox.value(),
-            "margin_bottom": self.roundedMarginBottomCard.spinBox.value(),
-            "line_spacing": self.roundedLineSpacingCard.spinBox.value(),
-            "letter_spacing": self.roundedLetterSpacingCard.spinBox.value(),
-        }
-        with open(style_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        style = RoundedSubtitleStyle(
+            font_name=self.roundedFontCard.comboBox.currentText(),
+            font_size=self.roundedFontSizeCard.spinBox.value(),
+            text_color=self.roundedTextColorCard.colorPicker.color.name(),
+            bg_color=bg_color_hex,
+            corner_radius=self.roundedCornerRadiusCard.spinBox.value(),
+            padding_h=self.roundedPaddingHCard.spinBox.value(),
+            padding_v=self.roundedPaddingVCard.spinBox.value(),
+            margin_bottom=self.roundedMarginBottomCard.spinBox.value(),
+            line_spacing=self.roundedLineSpacingCard.spinBox.value(),
+            letter_spacing=self.roundedLetterSpacingCard.spinBox.value(),
+        )
+        return SubtitleStylePreset(
+            id=style_id,
+            name=style_id.split("/", 1)[-1],
+            renderer=SubtitleRenderer.ROUNDED,
+            source=StyleSource.USER,
+            style=style,
+        )
 
     def dragEnterEvent(self, event):
         """拖入事件：检查是否为图片文件"""

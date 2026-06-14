@@ -1,6 +1,6 @@
 {
-  "name": "default",
-  "description": "",
+  "name": "默认描边",
+  "description": "通用白字黑边，适合多数横屏视频",
   "mode": "ass",
   "font_name": "LXGW WenKai",
   "font_size": 40,

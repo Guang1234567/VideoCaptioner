@@ -88,7 +88,7 @@ packages = ["videocaptioner"]
 # 与 config.py 的 _PACKAGE_RESOURCE_PATH 解析一致。fonts 必须包含：
 # 默认字幕样式主字体是 LXGW WenKai，缺了它 pip 用户默认渲染就回退错字体。
 "resource/assets" = "videocaptioner/resources/assets"
-"resource/subtitle_style" = "videocaptioner/resources/subtitle_style"
+"resource/subtitle_styles" = "videocaptioner/resources/subtitle_styles"
 "resource/translations" = "videocaptioner/resources/translations"
 "resource/fonts" = "videocaptioner/resources/fonts"
 

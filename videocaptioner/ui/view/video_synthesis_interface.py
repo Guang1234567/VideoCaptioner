@@ -526,6 +526,7 @@ class GeneratePanel(WorkbenchPanel):
     settingsRequested = pyqtSignal()
     collapseRequested = pyqtSignal()
     voiceLibraryRequested = pyqtSignal()
+    styleLibraryRequested = pyqtSignal()
     primaryRequested = pyqtSignal()
     cancelRequested = pyqtSignal()
     openFolderRequested = pyqtSignal()
@@ -586,9 +587,20 @@ class GeneratePanel(WorkbenchPanel):
         self.styleSwitch = ToggleSwitch(parent=self)
         self.styleCard = OptionCard(self.tr("字幕样式"), self.styleSwitch, self)
         subtitle_layout.addWidget(self.styleCard)
+        self.styleCard.hide()
         self.renderModeSelect = PillSelect(self)
         self.renderModeCard = OptionCard(self.tr("渲染模式"), self.renderModeSelect, self)
         subtitle_layout.addWidget(self.renderModeCard)
+        style_control = QWidget(self)
+        style_row = QHBoxLayout(style_control)
+        style_row.setContentsMargins(0, 0, 0, 0)
+        style_row.setSpacing(8)
+        self.stylePageLink = HeaderLinkButton(self.tr("样式页"), AppIcon.SUBTITLE, self)
+        self.stylePageLink.clicked.connect(self.styleLibraryRequested)
+        style_row.addWidget(self.stylePageLink)
+        style_row.addStretch(1)
+        self.stylePageCard = OptionCard(self.tr("样式"), style_control, self)
+        subtitle_layout.addWidget(self.stylePageCard)
         self.qualitySelect = PillSelect(self)
         self.qualityCard = OptionCard(self.tr("视频质量"), self.qualitySelect, self)
         subtitle_layout.addWidget(self.qualityCard)
@@ -858,6 +870,7 @@ class VideoSynthesisInterface(QWidget):
         panel.openFolderRequested.connect(self._open_result_folder)
         panel.settingsRequested.connect(self._open_synthesis_settings)
         panel.voiceLibraryRequested.connect(self._open_voice_library)
+        panel.styleLibraryRequested.connect(self._open_subtitle_style_library)
         panel.collapseRequested.connect(lambda: self.sideHost.setCollapsed(True))
         self.sideHost.collapsedChanged.connect(self._on_panel_collapsed)
         for row in self.resultRows:
@@ -869,7 +882,6 @@ class VideoSynthesisInterface(QWidget):
         panel.dubbingCard.toggled.connect(
             lambda checked: self._set_config_bool(cfg.dubbing_enabled, checked)
         )
-        panel.styleSwitch.toggled.connect(self._on_style_toggled)
         panel.subtitleModeSelect.currentTextChanged.connect(self._on_subtitle_mode)
         panel.renderModeSelect.currentTextChanged.connect(self._on_render_mode)
         panel.qualitySelect.currentTextChanged.connect(self._on_quality)
@@ -909,7 +921,6 @@ class VideoSynthesisInterface(QWidget):
             list(SUBTITLE_MODE_LABELS.values()),
             SUBTITLE_MODE_LABELS[bool(cfg.soft_subtitle.value)],
         )
-        panel.styleSwitch.setChecked(bool(cfg.use_subtitle_style.value))
         panel.renderModeSelect.setItems(
             [mode.value for mode in SubtitleRenderModeEnum],
             cfg.subtitle_render_mode.value.value,
@@ -957,22 +968,9 @@ class VideoSynthesisInterface(QWidget):
             self.state = PageState.IDLE
         self._refresh()
 
-    def _on_style_toggled(self, checked: bool):
-        self._set_config_bool(cfg.use_subtitle_style, checked)
-        if checked and cfg.soft_subtitle.value:
-            # 样式只对硬字幕生效，开样式时自动切硬字幕。
-            cfg.set(cfg.soft_subtitle, False)
-            self.generatePanel.subtitleModeSelect.setCurrentText(
-                SUBTITLE_MODE_LABELS[False]
-            )
-        self._refresh_param_locks()
-
     def _on_subtitle_mode(self, label: str):
         soft = label == SUBTITLE_MODE_LABELS[True]
         self._set_config_bool(cfg.soft_subtitle, soft)
-        if soft and cfg.use_subtitle_style.value:
-            cfg.set(cfg.use_subtitle_style, False)
-            self.generatePanel.styleSwitch.setChecked(False)
         self._refresh_param_locks()
 
     def _on_render_mode(self, label: str):
@@ -1008,11 +1006,9 @@ class VideoSynthesisInterface(QWidget):
                 return
 
     def _refresh_param_locks(self):
-        """渲染模式仅硬字幕 + 启用样式时可调。"""
-        hard_with_style = (
-            not cfg.soft_subtitle.value and cfg.use_subtitle_style.value
-        )
-        self.generatePanel.renderModeSelect.setEnabled(hard_with_style)
+        """渲染模式仅硬字幕可调；软字幕由播放器决定样式。"""
+        self.generatePanel.renderModeSelect.setEnabled(not cfg.soft_subtitle.value)
+        self.generatePanel.stylePageCard.setVisible(not cfg.soft_subtitle.value)
 
     # --------------------------------------------------------- state engine
 
@@ -1150,7 +1146,7 @@ class VideoSynthesisInterface(QWidget):
         panel = self.generatePanel
         panel.subtitleSection.setVisible(add_subtitle)
         panel.dubbingSection.setVisible(add_dubbing)
-        panel.styleCard.setVisible(add_subtitle)
+        panel.styleCard.hide()
         panel.qualityCard.setVisible(add_subtitle)
         show_full_dubbing = add_dubbing and not blocked
         panel.textTrackSelect.parentWidget().setVisible(show_full_dubbing)
@@ -1488,6 +1484,12 @@ class VideoSynthesisInterface(QWidget):
         dubbing = getattr(window, "dubbingInterface", None)
         if dubbing is not None and hasattr(window, "switchTo"):
             window.switchTo(dubbing)  # type: ignore[attr-defined]
+
+    def _open_subtitle_style_library(self):
+        window = self.window()
+        style_page = getattr(window, "subtitleStyleInterface", None)
+        if style_page is not None and hasattr(window, "switchTo"):
+            window.switchTo(style_page)  # type: ignore[attr-defined]
 
     # --------------------------------------------------------- external API
 

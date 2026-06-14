@@ -16,7 +16,7 @@ That makes the widget, persistence format, validation, and business config sourc
 Shared persistence now lives in core:
 
 - `videocaptioner.core.application.config_store`
-- default file: `platformdirs.user_config_dir("videocaptioner") / "config.toml"`
+- default file: `videocaptioner.config.APPDATA_PATH / "config.toml"`
 - test override: `VIDEOCAPTIONER_CONFIG_FILE=/path/to/config.toml`
 
 There is no separate CLI config module anymore. CLI code imports the core store

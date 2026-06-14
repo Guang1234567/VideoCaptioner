@@ -17,13 +17,18 @@ from videocaptioner.core.entities import (
     DubbingTask,
     DubbingUIConfig,
     SubtitleConfig,
+    SubtitleRenderModeEnum,
     SubtitleTask,
     SynthesisConfig,
     SynthesisTask,
     TranscribeConfig,
     TranscribeTask,
 )
-from videocaptioner.core.subtitle.style_manager import load_style
+from videocaptioner.core.subtitle.style_manager import (
+    SubtitleRenderer,
+    load_style,
+    normalize_style_id,
+)
 
 
 class TaskBuilder:
@@ -37,11 +42,16 @@ class TaskBuilder:
         return str(output_paths.new_task_dir(self.config.work_dir or WORK_PATH, source))
 
     def get_ass_style(self, style_name: Optional[str] = None) -> str:
-        style = load_style(style_name or self.config.subtitle.style_name)
+        style = load_style(style_name or self.config.subtitle.style_name, renderer=SubtitleRenderer.ASS)
         return style.to_ass_string() if style is not None else ""
 
     def get_rounded_style(self) -> dict:
-        return self.config.synthesis.rounded_style.to_dict()
+        style_id = normalize_style_id(
+            self.config.synthesis.style_id,
+            self.config.synthesis.render_mode.value,
+        )
+        style = load_style(style_id, renderer=SubtitleRenderer.ROUNDED)
+        return style.to_rounded_dict() if style is not None else {}
 
     def create_transcribe_config(self, *, need_word_timestamp: bool) -> TranscribeConfig:
         settings = self.config.transcribe
@@ -167,15 +177,25 @@ class TaskBuilder:
     def create_synthesis_config(self) -> SynthesisConfig:
         settings = self.config.synthesis
         subtitle = self.config.subtitle
-        use_style = settings.use_subtitle_style
+        hard_subtitle = not settings.soft_subtitle
+        style_id = normalize_style_id(settings.style_id, settings.render_mode.value)
+        ass_style = ""
+        rounded_style = None
+        if hard_subtitle:
+            if settings.render_mode == SubtitleRenderModeEnum.ASS_STYLE:
+                style = load_style(style_id, renderer=SubtitleRenderer.ASS)
+                ass_style = style.to_ass_string() if style is not None else ""
+            else:
+                style = load_style(style_id, renderer=SubtitleRenderer.ROUNDED)
+                rounded_style = style.to_rounded_dict() if style is not None else {}
         return SynthesisConfig(
             need_video=settings.need_video,
             soft_subtitle=settings.soft_subtitle,
             render_mode=settings.render_mode,
             video_quality=settings.video_quality,
             subtitle_layout=subtitle.layout,
-            ass_style=self.get_ass_style(subtitle.style_name) if use_style else "",
-            rounded_style=self.get_rounded_style() if use_style else None,
+            ass_style=ass_style,
+            rounded_style=rounded_style,
         )
 
     def create_synthesis_task(
