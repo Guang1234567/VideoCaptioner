@@ -54,13 +54,13 @@ class LLMTranslator(BaseTranslator):
         if self.is_reflect:
             prompt = get_prompt(
                 "translate/reflect",
-                target_language=self.target_language,
+                target_language=self.target_language.value,
                 custom_prompt=self.custom_prompt,
             )
         else:
             prompt = get_prompt(
                 "translate/standard",
-                target_language=self.target_language,
+                target_language=self.target_language.value,
                 custom_prompt=self.custom_prompt,
             )
 
@@ -193,7 +193,7 @@ class LLMTranslator(BaseTranslator):
     ) -> List[SubtitleProcessData]:
         """单条翻译模式"""
         single_prompt = get_prompt(
-            "translate/single", target_language=self.target_language
+            "translate/single", target_language=self.target_language.value
         )
 
         for data in subtitle_chunk:
