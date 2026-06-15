@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -16,8 +16,14 @@ from videocaptioner.config import ASSETS_PATH
 CUSTOM_ICON_DIR = ASSETS_PATH / "icons"
 
 
-class AppIcon(StrEnum):
-    """App-owned SVG icons in resource/assets/icons."""
+class AppIcon(str, Enum):
+    """App-owned SVG icons in resource/assets/icons.
+
+    ``str, Enum`` 而非 ``enum.StrEnum``：后者仅 Python 3.11+，而本项目
+    ``requires-python = ">=3.10"``，3.10 下 ``import StrEnum`` 会直接 ImportError，
+    连带所有用到 AppIcon 的 UI 模块全部加载失败。``__str__`` 返回值以保持与
+    StrEnum 一致（``str(AppIcon.X)`` 取图标名，供路径/缓存键使用）。
+    """
 
     ADD = "add"
     ALIGNMENT = "alignment"
@@ -63,6 +69,9 @@ class AppIcon(StrEnum):
     VIEW = "view"
     VOLUME = "volume"
     ZOOM = "zoom"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class AppFluentIcon(FluentIconBase):

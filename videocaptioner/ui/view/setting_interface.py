@@ -705,6 +705,7 @@ class SettingInterface(SettingsShell):
                         Option("natural", self.tr("自然")),
                         Option("balanced", self.tr("均衡")),
                         Option("strict", self.tr("严格")),
+                        Option("none", self.tr("不变速")),
                     ],
                     group,
                 ),

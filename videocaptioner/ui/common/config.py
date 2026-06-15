@@ -326,7 +326,9 @@ class Config(SettingsState):
         "Dubbing",
         "Timing",
         "balanced",
-        ChoiceValidator(["natural", "balanced", "strict"]),
+        # 含 "none"：core/CLI（resolve_timing、--timing none）均支持不变速，
+        # 此处必须保留该取值，否则从 CLI/TOML 设的 none 被 GUI 矫正成首项、再保存即丢配置。
+        ChoiceValidator(["natural", "balanced", "strict", "none"]),
     )
     dubbing_audio_mode = ChoiceSettingField(
         "Dubbing",
