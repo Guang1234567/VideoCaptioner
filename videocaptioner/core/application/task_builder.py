@@ -180,11 +180,13 @@ class TaskBuilder:
         hard_subtitle = not settings.soft_subtitle
         style_id = normalize_style_id(settings.style_id, settings.render_mode.value)
         ass_style = ""
+        ass_line_gap = 0
         rounded_style = None
         if hard_subtitle:
             if settings.render_mode == SubtitleRenderModeEnum.ASS_STYLE:
                 style = load_style(style_id, renderer=SubtitleRenderer.ASS)
                 ass_style = style.to_ass_string() if style is not None else ""
+                ass_line_gap = getattr(style.style, "line_gap", 0) if style is not None else 0
             else:
                 style = load_style(style_id, renderer=SubtitleRenderer.ROUNDED)
                 rounded_style = style.to_rounded_dict() if style is not None else {}
@@ -195,6 +197,7 @@ class TaskBuilder:
             video_quality=settings.video_quality,
             subtitle_layout=subtitle.layout,
             ass_style=ass_style,
+            ass_line_gap=ass_line_gap,
             rounded_style=rounded_style,
         )
 

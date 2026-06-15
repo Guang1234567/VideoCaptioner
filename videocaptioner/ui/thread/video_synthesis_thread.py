@@ -64,6 +64,7 @@ class VideoSynthesisThread(WorkerThread):
                 subtitle_layout=config.subtitle_layout,
                 ass_style=config.ass_style,
                 rounded_style=config.rounded_style,
+                ass_line_gap=config.ass_line_gap,
                 crf=crf,
                 preset=preset,
                 progress_callback=self._progress_callback,

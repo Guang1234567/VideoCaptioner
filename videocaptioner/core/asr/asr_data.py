@@ -331,6 +331,7 @@ class ASRData:
         save_path: Optional[str] = None,
         video_width: int = 1280,
         video_height: int = 720,
+        line_gap: int = 0,
     ) -> str:
         """Convert to ASS subtitle format
 
@@ -368,7 +369,16 @@ class ASRData:
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
         )
 
-        dialogue_template = "Dialogue: 0,{},{},{},,0,0,0,,{}\n"
+        # 双语时给上行（Default）一个绝对 MarginV，制造可控的主副间距。
+        # line_gap<=0 时 top_mv 为 None，沿用 libass 默认紧贴堆叠（存量零回归）。
+        from videocaptioner.core.subtitle.ass_renderer import top_line_margin_v
+
+        top_mv = top_line_margin_v(style_str, line_gap)
+        top_mv = top_mv if top_mv is not None else 0
+
+        def _dlg(start, end, style, text, marginv=0):
+            return f"Dialogue: 0,{start},{end},{style},,0,0,{marginv},,{text}\n"
+
         for seg in self.segments:
             start_time, end_time = seg.to_ass_ts()
             # ASS uses \N for line breaks within dialogue
@@ -379,38 +389,22 @@ class ASRData:
             if layout == SubtitleLayoutEnum.TRANSLATE_ON_TOP:
                 if has_translation:
                     # Secondary(原文)先写(渲染在下)，Default(译文)后写(渲染在上)
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Secondary", original
-                    )
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Default", translated
-                    )
+                    ass_content += _dlg(start_time, end_time, "Secondary", original)
+                    ass_content += _dlg(start_time, end_time, "Default", translated, top_mv)
                 else:
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Default", original
-                    )
+                    ass_content += _dlg(start_time, end_time, "Default", original)
             elif layout == SubtitleLayoutEnum.ORIGINAL_ON_TOP:
                 if has_translation:
                     # Secondary(译文)先写(渲染在下)，Default(原文)后写(渲染在上)
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Secondary", translated
-                    )
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Default", original
-                    )
+                    ass_content += _dlg(start_time, end_time, "Secondary", translated)
+                    ass_content += _dlg(start_time, end_time, "Default", original, top_mv)
                 else:
-                    ass_content += dialogue_template.format(
-                        start_time, end_time, "Default", original
-                    )
+                    ass_content += _dlg(start_time, end_time, "Default", original)
             elif layout == SubtitleLayoutEnum.ONLY_ORIGINAL:
-                ass_content += dialogue_template.format(
-                    start_time, end_time, "Default", original
-                )
+                ass_content += _dlg(start_time, end_time, "Default", original)
             else:  # ONLY_TRANSLATE
                 text = translated if has_translation else original
-                ass_content += dialogue_template.format(
-                    start_time, end_time, "Default", text
-                )
+                ass_content += _dlg(start_time, end_time, "Default", text)
 
         if save_path:
             save_path = handle_long_path(save_path)

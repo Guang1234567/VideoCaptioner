@@ -101,12 +101,41 @@ def _scale_ass_style(style_str: str, scale_factor: float) -> str:
                 parts[13] = str(float(parts[13]) * scale_factor)
                 # parts[16]: Outline
                 parts[16] = str(float(parts[16]) * scale_factor)
+                # parts[19]/parts[20]: MarginL/MarginR（最大宽度边距）
+                parts[19] = str(int(float(parts[19]) * scale_factor))
+                parts[20] = str(int(float(parts[20]) * scale_factor))
                 # parts[21]: MarginV (垂直间距)
                 parts[21] = str(int(float(parts[21]) * scale_factor))
                 line = ",".join(parts)
         scaled_lines.append(line)
 
     return "\n".join(scaled_lines)
+
+
+def top_line_margin_v(style_str: str, line_gap: int) -> Optional[int]:
+    """双语时上行（Default）距底部的 MarginV = 底边距 + 副字幕行高估算 + 主副间距。
+
+    line_gap<=0 时返回 None，表示沿用 libass 默认的紧贴堆叠（对存量样式零回归）。
+    style_str 应为已按视频高度缩放后的样式串，line_gap 也应是已缩放的像素值。
+    """
+    if line_gap <= 0:
+        return None
+    base: Optional[int] = None
+    sec_size: Optional[int] = None
+    for line in style_str.splitlines():
+        if not line.startswith("Style:"):
+            continue
+        parts = line.split(",")
+        if len(parts) < 23:
+            continue
+        name = parts[0].split(":", 1)[1].strip()
+        if name == "Default":
+            base = int(float(parts[21]))
+        elif name == "Secondary":
+            sec_size = int(float(parts[2]))
+    if base is None:
+        return None
+    return base + int((sec_size or 30) * 1.2) + line_gap
 
 
 def render_ass_preview(
@@ -116,6 +145,7 @@ def render_ass_preview(
     width: Optional[int] = None,
     height: Optional[int] = None,
     reference_height: int = 720,
+    line_gap: int = 0,
 ) -> str:
     """
     生成 ASS 样式字幕预览图
@@ -144,30 +174,24 @@ def render_ass_preview(
 
     original_text, translate_text = preview_text
 
-    # 构建对话行
+    # 先按图片高度缩放样式，主副间距也同比缩放，再据此构建对话行
+    scale_factor = height / reference_height
+    style_str = _scale_ass_style(style_str, scale_factor)
+
+    # 双语时给上行（Default）一个绝对 MarginV，制造可控的主副间距
+    top_mv = top_line_margin_v(style_str, int(line_gap * scale_factor))
+    top_mv_field = top_mv if top_mv is not None else 0
     if translate_text:
         dialogue = [
             f"Dialogue: 0,0:00:00.00,0:00:01.00,Secondary,,0,0,0,,{translate_text}",
-            f"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{original_text}",
+            f"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,{top_mv_field},,{original_text}",
         ]
     else:
         dialogue = [
             f"Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{original_text}"
         ]
 
-    # 生成 ASS 内容
-    ass_content = ASS_TEMPLATE.format(
-        style_str=style_str,
-        dialogue=os.linesep.join(dialogue),
-        video_width=width,
-        video_height=height,
-    )
-
-    # 从 ASS 内容中提取参考高度，根据图片高度自动缩放样式
-    scale_factor = height / reference_height
-    style_str = _scale_ass_style(style_str, scale_factor)
-
-    # 重新生成缩放后的 ASS 内容
+    # 生成缩放后的 ASS 内容
     ass_content = ASS_TEMPLATE.format(
         style_str=style_str,
         dialogue=os.linesep.join(dialogue),
@@ -296,6 +320,7 @@ def render_ass_video(
     preset: str = "medium",
     progress_callback: Optional[Callable] = None,
     reference_height: int = 720,
+    line_gap: int = 0,
 ) -> None:
     """
     渲染 ASS 样式字幕到视频（硬字幕）
@@ -334,6 +359,7 @@ def render_ass_video(
             save_path=None,
             video_width=width,
             video_height=height,
+            line_gap=int(line_gap * scale_factor),
         )
         temp_file.write(ass_content)
         temp_ass_path = temp_file.name

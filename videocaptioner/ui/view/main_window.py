@@ -17,7 +17,7 @@ from qfluentwidgets import (
 
 from videocaptioner.config import ASSETS_PATH, GITHUB_REPO_URL
 from videocaptioner.core.constant import INFOBAR_DURATION_FOREVER
-from videocaptioner.ui.common.app_icons import AppIcon
+from videocaptioner.ui.common.app_icons import AppFluentIcon, AppIcon
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.theme_tokens import BG_DARK, BG_LIGHT
 from videocaptioner.ui.components.app_dialog import ConfirmDialog
@@ -34,7 +34,8 @@ from videocaptioner.ui.view.subtitle_style_interface import SubtitleStyleInterfa
 LOGO_PATH = ASSETS_PATH / "logo.png"
 NAV_EXPAND_WIDTH = 132
 NAV_MINIMUM_EXPAND_WIDTH = 760
-WINDOW_MINIMUM_WIDTH = 960
+# 字幕样式页是三栏布局，最窄需约 950px；窗口最小宽要容纳它 + 导航栏，否则右栏被切。
+WINDOW_MINIMUM_WIDTH = 1020
 SETTINGS_TITLEBAR_INSET = 16
 
 
@@ -85,7 +86,9 @@ class MainWindow(FluentWindow):
         # 添加导航项
         self.addSubInterface(self.homeInterface, FIF.HOME, self.tr("主页"))
         self.addSubInterface(self.batchProcessInterface, FIF.VIDEO, self.tr("批量处理"))
-        self.addSubInterface(self.subtitleStyleInterface, FIF.FONT, self.tr("字幕样式"))
+        self.addSubInterface(
+            self.subtitleStyleInterface, AppFluentIcon(AppIcon.SUBTITLE), self.tr("字幕样式")
+        )
         self.addSubInterface(self.dubbingInterface, FIF.VOLUME, self.tr("配音"))
         self.addSubInterface(self.llmLogsInterface, FIF.HISTORY, self.tr("请求日志"))
         self.addSubInterface(self.doctorInterface, FIF.SEARCH, self.tr("诊断"))

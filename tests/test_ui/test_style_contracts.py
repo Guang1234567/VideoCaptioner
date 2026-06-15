@@ -17,10 +17,7 @@ from pathlib import Path
 UI_ROOT = Path(__file__).resolve().parents[2] / "videocaptioner" / "ui"
 
 # 构造后由持有方立即调用 syncStyle 的类（运行时已逐一核实有样式）。
-EXEMPT = {
-    # 行控件统一由所属分组容器在构造末尾批量 syncStyle
-    "components/subtitle_style_controls.py": {"SubtitleStyleRow"},
-}
+EXEMPT: dict[str, set[str]] = {}
 
 
 def _method_calls(func: ast.FunctionDef) -> set[str]:

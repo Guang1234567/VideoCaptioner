@@ -41,6 +41,18 @@ class StyleSource(Enum):
 # renderer, not a subtitle file format.
 StyleMode = SubtitleRenderer
 
+# 对齐字符串 -> ASS Alignment（数字小键盘布局，底部一行）。
+_ASS_ALIGNMENT = {"left": 1, "center": 2, "right": 3}
+# ASS 样式以 720p（约 1280 宽）为基准编写，渲染时再按视频高度缩放。
+_ASS_REFERENCE_WIDTH = 1280
+
+
+def _ass_margin_lr(max_width: int) -> int:
+    """最大宽度百分比 -> ASS 左右边距（基准宽度像素）。100% 保留历史的 10px 安全边距。"""
+    if max_width >= 100:
+        return 10
+    return int(_ASS_REFERENCE_WIDTH * (100 - max_width) / 200)
+
 
 @dataclass(frozen=True)
 class AssSecondaryStyle:
@@ -69,12 +81,17 @@ class AssSubtitleStyle:
     bold: bool = True
     spacing: float = 0.0
     margin_bottom: int = 30
+    max_width: int = 100  # 文本最大宽度（占画面宽度百分比）；100=不额外限制
+    align: str = "center"  # 水平对齐：left / center / right
+    line_gap: int = 0  # 主副字幕之间的额外间距（仅双语时生效，作用于上行）
     secondary: AssSecondaryStyle | None = None
 
     def to_ass_string(self) -> str:
         primary = _hex_to_ass(self.primary_color)
         outline = _hex_to_ass(self.outline_color)
         bold_flag = -1 if self.bold else 0
+        align = _ASS_ALIGNMENT.get(self.align, 2)
+        margin_lr = _ass_margin_lr(self.max_width)
         secondary = self.secondary or AssSecondaryStyle(
             font_name=self.font_name,
             font_size=max(8, int(self.font_size * 0.72)),
@@ -92,13 +109,13 @@ class AssSubtitleStyle:
             f"Style: Default,{self.font_name},{self.font_size},"
             f"{primary},&H000000FF,{outline},&H00000000,"
             f"{bold_flag},0,0,0,100,100,{self.spacing},0,1,"
-            f"{self.outline_width},0,2,10,10,{self.margin_bottom},1,\\q1"
+            f"{self.outline_width},0,{align},{margin_lr},{margin_lr},{self.margin_bottom},1,\\q1"
         )
         secondary_line = (
             f"Style: Secondary,{secondary.font_name},{secondary.font_size},"
             f"{sec_color},&H000000FF,{sec_outline},&H00000000,"
             f"{bold_flag},0,0,0,100,100,{secondary.spacing},0,1,"
-            f"{secondary.outline_width},0,2,10,10,{self.margin_bottom},1,\\q1"
+            f"{secondary.outline_width},0,{align},{margin_lr},{margin_lr},{self.margin_bottom},1,\\q1"
         )
         return f"{header}\n{default_line}\n{secondary_line}"
 
@@ -121,8 +138,10 @@ class RoundedSubtitleStyle:
     padding_h: int = 28
     padding_v: int = 14
     margin_bottom: int = 60
-    line_spacing: int = 10
+    line_spacing: int = 10  # 主副两个气泡之间的间距（也用于块内换行）
     letter_spacing: int = 0
+    max_width: int = 90  # 文本块最大宽度（占画面宽度百分比）
+    align: str = "center"  # 水平对齐：left / center / right
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -426,6 +445,8 @@ def preset_from_json(
             margin_bottom=int(data.get("margin_bottom") or 60),
             line_spacing=int(data.get("line_spacing") or 10),
             letter_spacing=int(data.get("letter_spacing") or 0),
+            max_width=int(data.get("max_width") or 90),
+            align=str(data.get("align") or "center"),
         )
     else:
         secondary_data = data.get("secondary")
@@ -443,6 +464,9 @@ def preset_from_json(
             bold=bool(data.get("bold", True)),
             spacing=float(data.get("spacing") or 0.0),
             margin_bottom=int(data.get("margin_bottom") or 30),
+            max_width=int(data.get("max_width") or 100),
+            align=str(data.get("align") or "center"),
+            line_gap=int(data.get("line_gap") or 0),
             secondary=secondary,
         )
 

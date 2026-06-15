@@ -106,7 +106,7 @@ class TestStyleNameDialog:
         from videocaptioner.ui.view.subtitle_style_interface import StyleNameDialog
 
         _, tab = host
-        dialog = StyleNameDialog(tab)
+        dialog = StyleNameDialog(parent=tab)
         assert not dialog.confirmButton.isEnabled()
         dialog.nameLineEdit.setText("  ")
         app.processEvents()

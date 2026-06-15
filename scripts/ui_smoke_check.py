@@ -976,36 +976,54 @@ def _check_subtitle(output_dir: Path, app, screenshot_names: list[str]) -> None:
 
 
 def _check_subtitle_style(output_dir: Path, app, screenshot_names: list[str]) -> None:
-    """字幕样式页：预览文案预设/自定义切换，大窗口下预览卡与设置区底边对齐。"""
+    """字幕样式页（三栏）：样式库加载、ASS/圆角分页切换重建参数面板、显示内容分段控双语顺序行显隐。"""
     widget = _make_page("subtitle-style")
     widget.resize(*PAGE_SIZE)
     widget.show()
     _settle_widget(widget, app)
-    widget.previewTextCard.setCurrentText("短文本")
+
+    # 样式库有卡片，参数面板已构建
+    assert widget._cards, "subtitle style library has no cards"
+    assert widget._ass or widget._rounded, "inspector controls not built"
+    _grab(widget, output_dir, "subtitle-style-ass", app)
+    screenshot_names.append("subtitle-style-ass")
+
+    # 显示内容切到"原文"时，双语顺序行应隐藏；切回"双语"恢复
+    widget.contentSeg.setCurrent("source")
     _settle_widget(widget, app)
-    assert not widget.previewOriginalTextCard.isVisible()
-    assert not widget.previewTranslationTextCard.isVisible()
-    assert "Elementary" in widget._preview_texts()[0]
-    widget.previewTextCard.setCurrentText("自定义")
+    assert not widget.orderRow.isVisible()
+    widget.contentSeg.setCurrent("bilingual")
     _settle_widget(widget, app)
-    assert widget.previewOriginalTextCard.isVisible()
-    assert widget.previewTranslationTextCard.isVisible()
-    widget.previewOriginalTextCard.lineEdit.setText("Custom original preview text")
-    widget.previewTranslationTextCard.lineEdit.setText("自定义译文预览文本")
+    assert widget.orderRow.isVisible()
+
+    # 切到圆角背景：参数面板重建为圆角控件集
+    widget.modeTabs.setCurrent("rounded")
     _settle_widget(widget, app)
-    assert widget._preview_texts() == ("Custom original preview text", "自定义译文预览文本")
-    _grab(widget, output_dir, "subtitle-style-custom-preview", app)
-    screenshot_names.append("subtitle-style-custom-preview")
-    widget.resize(1440, 980)
+    assert widget._rounded and "bg_color" in widget._rounded
+    _grab(widget, output_dir, "subtitle-style-rounded", app)
+    screenshot_names.append("subtitle-style-rounded")
+
+    widget.modeTabs.setCurrent("ass")
     _settle_widget(widget, app)
-    if abs(widget.previewCard.geometry().bottom() - widget.settingsScrollArea.geometry().bottom()) > 2:
-        raise AssertionError(
-            f"subtitle preview card bottom is not aligned: "
-            f"preview={widget.previewCard.geometry().bottom()} "
-            f"settings={widget.settingsScrollArea.geometry().bottom()}"
-        )
-    _grab(widget, output_dir, "subtitle-style-fullscreen-state", app)
-    screenshot_names.append("subtitle-style-fullscreen-state")
+
+    # 大窗回归守卫：自绘卡片/参数行若漏设透明背景，深色主题下会露出 Qt 白底。
+    # 采样左栏样式库下方空白区 + 右栏参数区，断言必须是深色（亮度 < 80）。
+    widget.resize(1900, 1400)
+    _settle_widget(widget, app)
+    image = widget.grab().toImage()
+    w_px, h_px = image.width(), image.height()
+    samples = {
+        "library-empty": (90, int(h_px * 0.7)),
+        "inspector-area": (w_px - 180, int(h_px * 0.45)),
+    }
+    for where, (x, y) in samples.items():
+        color = image.pixelColor(x, y)
+        lum = (color.red() + color.green() + color.blue()) // 3
+        if lum >= 80:
+            raise AssertionError(
+                f"subtitle-style {where} 在深色主题下发白（亮度 {lum} @ {x},{y}）："
+                "自绘组件可能漏设透明背景，露出了 Qt 默认白底。"
+            )
     widget.close()
 
 

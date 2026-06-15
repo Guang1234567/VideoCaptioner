@@ -7,7 +7,6 @@ from typing import Any
 from PyQt5.QtCore import Qt, QThread, QTimer, QUrl, pyqtSignal
 from PyQt5.QtGui import QColor, QDesktopServices
 from PyQt5.QtWidgets import (
-    QColorDialog,
     QFileDialog,
     QHBoxLayout,
     QSizePolicy,
@@ -1166,8 +1165,12 @@ class SettingInterface(SettingsShell):
             )
 
     def _choose_theme_color(self) -> None:
-        color = QColorDialog.getColor(cfg.themeColor.value, self, self.tr("选择主题颜色"))
-        if not color.isValid():
+        from videocaptioner.ui.components.color_picker import ColorPickerDialog
+
+        color = ColorPickerDialog.get_color(
+            cfg.themeColor.value, parent=self, alpha=False, title=self.tr("选择主题颜色")
+        )
+        if color is None or not color.isValid():
             return
         cfg.set(cfg.themeColor, color)
 

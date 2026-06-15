@@ -54,7 +54,8 @@ def render_text_block(
     draw: ImageDraw.ImageDraw,
     texts: List[str],
     font: FontType,
-    center_x: int,
+    usable_left: int,
+    usable_right: int,
     top_y: float,
     style: RoundedBgStyle,
 ) -> float:
@@ -65,7 +66,8 @@ def render_text_block(
         draw: PIL ImageDraw 对象
         texts: 文本行列表
         font: 字体对象
-        center_x: 水平中心位置
+        usable_left: 可用区域左边界（受最大宽度约束）
+        usable_right: 可用区域右边界
         top_y: 顶部 y 坐标
         style: 样式配置
 
@@ -90,14 +92,19 @@ def render_text_block(
         line_sizes.append((text_width, bbox[3] - bbox[1]))
         line_offsets.append(bbox[1])  # 记录垂直偏移，用于居中对齐
 
-    max_width = max(w for w, h in line_sizes)
+    block_width = max(w for w, h in line_sizes)
     line_height = max(h for w, h in line_sizes)
     total_height = line_height * len(texts) + style.line_spacing * (len(texts) - 1)
 
-    # 绘制共享背景
-    bg_width = max_width + style.padding_h * 2
+    # 绘制共享背景：按对齐方式把气泡贴到可用区域的左/中/右
+    bg_width = block_width + style.padding_h * 2
     bg_height = total_height + style.padding_v * 2
-    bg_left = center_x - bg_width // 2
+    if style.align == "left":
+        bg_left = usable_left
+    elif style.align == "right":
+        bg_left = usable_right - bg_width
+    else:
+        bg_left = (usable_left + usable_right) // 2 - bg_width // 2
     bg_top = top_y
 
     draw.rounded_rectangle(
@@ -106,11 +113,12 @@ def render_text_block(
         fill=bg_color,
     )
 
-    # 绘制文本（补偿字体垂直偏移）
+    # 绘制文本（文字在气泡内水平居中，补偿字体垂直偏移）
+    text_center = bg_left + bg_width // 2
     y = bg_top + style.padding_v
     for i, text in enumerate(texts):
         w, h = line_sizes[i]
-        x = center_x - w // 2
+        x = text_center - w // 2
         y_offset = line_offsets[i]
         text_y = y - y_offset  # 补偿垂直偏移，使文本视觉居中
 
@@ -154,8 +162,12 @@ def render_subtitle_image(
     draw = ImageDraw.Draw(image)
     font = get_font(style.font_size, style.font_name)
 
-    # 换行处理（额外留 40px 边距防止文字贴边）
-    extra_margin = int(width * 0.1)
+    # 可用区域：受最大宽度百分比约束，超出部分作为换行的额外边距
+    max_pct = style.max_width if 0 < style.max_width <= 100 else 90
+    usable_w = max(1, int(width * max_pct / 100))
+    usable_left = (width - usable_w) // 2
+    usable_right = usable_left + usable_w
+    extra_margin = width - usable_w
     primary_lines = (
         wrap_text(primary_text, font, width, style.padding_h, extra_margin=extra_margin)
         if primary_text
@@ -166,8 +178,6 @@ def render_subtitle_image(
         if secondary_text
         else []
     )
-
-    center_x = width // 2
 
     # 计算总高度
     def calc_block_height(lines: List[str]) -> float:
@@ -189,10 +199,10 @@ def render_subtitle_image(
     # 渲染文本块
     current_y = start_y
     if primary_lines:
-        h = render_text_block(draw, primary_lines, font, center_x, current_y, style)
+        h = render_text_block(draw, primary_lines, font, usable_left, usable_right, current_y, style)
         current_y += h + gap
     if secondary_lines:
-        render_text_block(draw, secondary_lines, font, center_x, current_y, style)
+        render_text_block(draw, secondary_lines, font, usable_left, usable_right, current_y, style)
 
     return image
 

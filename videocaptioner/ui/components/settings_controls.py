@@ -21,7 +21,6 @@ from PyQt5.QtWidgets import (
 from qfluentwidgets import (
     ComboBox,
     EditableComboBox,
-    LineEdit,
     PrimaryPushButton,
     PushButton,
     ScrollArea,
@@ -32,7 +31,7 @@ from videocaptioner.ui.common.app_icons import AppIcon, apply_button_icon
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.settings_state import SettingField
 from videocaptioner.ui.common.theme_tokens import app_palette, is_dark_theme, rgba
-from videocaptioner.ui.components.workbench import apply_font
+from videocaptioner.ui.components.workbench import AppLineEdit, apply_font
 
 CONTROL_WIDTH = 246
 CONTROL_HEIGHT = 46
@@ -593,17 +592,15 @@ class BoundEditableComboBox(EditableComboBox):
         _apply_control_style(self)
 
 
-class BoundLineEdit(LineEdit):
-    def paintEvent(self, e):  # noqa: N802
-        # 跳过 qfluent 聚焦底部下划线：聚焦态已有边框，双重指示很乱
-        QLineEdit.paintEvent(self, e)
+class BoundLineEdit(AppLineEdit):
+    """设置页文本输入：复用第一方 AppLineEdit（自绘圆角、聚焦主题色描边、
+
+    失焦自动清除、无 qfluent 下划线），并绑定到配置项。"""
 
     def __init__(self, config_item: SettingField, placeholder: str = "", parent=None, password: bool = False):
-        super().__init__(parent)
+        super().__init__(parent=parent, height=CONTROL_HEIGHT)
         self.config_item = config_item
-        self.setObjectName("settingsControl")
         self.setFixedWidth(CONTROL_WIDTH)
-        self.setFixedHeight(CONTROL_HEIGHT)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setPlaceholderText(placeholder)
         if password:
@@ -611,7 +608,6 @@ class BoundLineEdit(LineEdit):
         self.setText(str(config_item.value or ""))
         self.textChanged.connect(self._on_text_changed)
         _bind_config_value(self, config_item, self.setValue)
-        self.syncStyle()
 
     def setValue(self, value: Any) -> None:  # noqa: N802
         self.blockSignals(True)
@@ -626,9 +622,6 @@ class BoundLineEdit(LineEdit):
                 self.setText(text)
                 self.blockSignals(False)
         cfg.set(self.config_item, text)
-
-    def syncStyle(self) -> None:
-        _apply_control_style(self)
 
 
 class BoundSwitch(SwitchButton):

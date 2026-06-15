@@ -1006,9 +1006,11 @@ class VideoSynthesisInterface(QWidget):
                 return
 
     def _refresh_param_locks(self):
-        """渲染模式仅硬字幕可调；软字幕由播放器决定样式。"""
-        self.generatePanel.renderModeSelect.setEnabled(not cfg.soft_subtitle.value)
-        self.generatePanel.stylePageCard.setVisible(not cfg.soft_subtitle.value)
+        """渲染模式仅硬字幕可调；软字幕由播放器决定样式，整行连同样式入口一起隐藏。"""
+        hard_subtitle = not cfg.soft_subtitle.value
+        self.generatePanel.renderModeSelect.setEnabled(hard_subtitle)
+        self.generatePanel.renderModeCard.setVisible(hard_subtitle)
+        self.generatePanel.stylePageCard.setVisible(hard_subtitle)
 
     # --------------------------------------------------------- state engine
 

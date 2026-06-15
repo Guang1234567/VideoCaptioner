@@ -36,6 +36,7 @@ from PyQt5.QtCore import (
     QPropertyAnimation,
     QRectF,
     Qt,
+    QTimer,
     pyqtSignal,
 )
 from PyQt5.QtGui import (
@@ -48,7 +49,7 @@ from PyQt5.QtGui import (
     QPixmap,
     QRadialGradient,
 )
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 from qfluentwidgets import Action, RoundMenu
 
 from videocaptioner.core.entities import (
@@ -1234,12 +1235,77 @@ class PrimaryIconButton(QFrame):
         self.update()
 
 
+class AppLineEdit(QLineEdit):
+    """第一方单行输入框：自绘抗锯齿圆角底 + 聚焦主题色描边，去掉 qfluent 的底部下划线，
+
+    与 workbench 其余控件同一套设计语言。用于弹窗 / 取色器等所有单行文本输入。"""
+
+    def __init__(self, text: str = "", parent=None, height: int = 36):
+        super().__init__(text, parent)
+        self.setObjectName("appLineEdit")
+        self.setFrame(False)
+        self.setFixedHeight(height)
+        self.setCursor(Qt.IBeamCursor)  # type: ignore[arg-type]
+        self.syncStyle()
+
+    def paintEvent(self, event):
+        palette = app_palette()
+        if self.hasFocus():
+            border = palette.accent
+        elif self.underMouse() and self.isEnabled():
+            border = palette.accent_border
+        else:
+            border = palette.line_soft
+        draw_rounded_surface(self, palette.field, border, 9)
+        super().paintEvent(event)
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.update()
+
+    def syncStyle(self):
+        palette = app_palette()
+        apply_font(self, 14, 720)
+        self.setStyleSheet(
+            f"""
+            QLineEdit#appLineEdit {{
+                background: transparent;
+                border: none;
+                padding: 0 12px;
+                color: {palette.text};
+                selection-background-color: {rgba(palette.accent, 0.35)};
+                selection-color: {palette.text};
+            }}
+            """
+        )
+        self.update()
+
+
 class CompactButton(QFrame):
     """紧凑按钮（.btn.compact）：32 高、图标 + 文案，表格头部操作用。"""
 
     clicked = pyqtSignal()
 
-    def __init__(self, text: str, icon: AppIcon | None = None, parent=None):
+    def __init__(
+        self,
+        text: str,
+        icon: AppIcon | None = None,
+        parent=None,
+        icon_only: bool = False,
+        pad_h: int = 11,
+    ):
         super().__init__(parent)
         self.setObjectName("wbCompactButton")
         self._icon = icon
@@ -1247,8 +1313,8 @@ class CompactButton(QFrame):
         self.setCursor(Qt.PointingHandCursor)  # type: ignore[arg-type]
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(11, 0, 11, 0)
-        layout.setSpacing(8)
+        layout.setContentsMargins(pad_h, 0, pad_h, 0)
+        layout.setSpacing(6)
         self.iconLabel = QLabel(self)
         self.iconLabel.setVisible(icon is not None)
         layout.addWidget(self.iconLabel)
@@ -1256,6 +1322,12 @@ class CompactButton(QFrame):
         self.textLabel.setObjectName("wbCompactText")
         apply_font(self.textLabel, 13, 850)
         layout.addWidget(self.textLabel)
+        if icon_only:
+            # 仅图标按钮：收起文字与间距并居中图标，适合窄列内的卡片动作（配 tooltip）。
+            self.textLabel.hide()
+            layout.setSpacing(0)
+            layout.insertStretch(0, 1)
+            layout.addStretch(1)
         self.syncStyle()
 
     def text(self) -> str:
@@ -1458,6 +1530,8 @@ class PillSelect(QFrame):
                     lambda _=False, text=item: self.setCurrentText(text)
                 )
                 menu.addAction(action)
+            # 候选很多时（如字体）限制可见行数并滚动，避免菜单顶到屏幕高度。
+            menu.setMaxVisibleItems(14)
             menu.exec(self.mapToGlobal(self.rect().bottomLeft()))
             event.accept()
             return
@@ -1496,6 +1570,176 @@ class PillSelect(QFrame):
             QLabel#wbPillSelectText {{ color: {fg}; background: transparent; border: none; }}
             """
         )
+
+
+class _StepButton(QFrame):
+    """步进器左右的加减格子（自绘圆角）。按住可连续触发并随按住时间加速。"""
+
+    clicked = pyqtSignal()
+
+    # 首次延迟后开始连发，连发间隔随按住时长逐级加快（毫秒）。
+    _HOLD_DELAY = 380
+    _REPEAT_STEPS = ((6, 110), (16, 60), (10**9, 28))
+
+    def __init__(self, symbol: str, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)  # type: ignore[arg-type]
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.label = QLabel(symbol, self)
+        self.label.setAlignment(Qt.AlignCenter)  # type: ignore[arg-type]
+        apply_font(self.label, 16, 760)
+        layout.addWidget(self.label)
+        self._repeat_timer = QTimer(self)
+        self._repeat_timer.setSingleShot(True)
+        self._repeat_timer.timeout.connect(self._on_repeat)
+        self._repeat_count = 0
+        self.syncStyle()
+
+    def _on_repeat(self):
+        if not self.isEnabled():
+            return
+        self._repeat_count += 1
+        self.clicked.emit()
+        interval = next(ms for limit, ms in self._REPEAT_STEPS if self._repeat_count < limit)
+        self._repeat_timer.start(interval)
+
+    def _stop_repeat(self):
+        self._repeat_timer.stop()
+        self._repeat_count = 0
+
+    def mousePressEvent(self, event):
+        if self.isEnabled() and event.button() == Qt.LeftButton:  # type: ignore[attr-defined]
+            self.clicked.emit()
+            self._repeat_count = 0
+            self._repeat_timer.start(self._HOLD_DELAY)  # 按住超过延迟才开始连发
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._stop_repeat()
+        super().mouseReleaseEvent(event)
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._stop_repeat()  # 移出按钮即停止连发，避免“跑飞”
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        palette = app_palette()
+        hovered = self.underMouse() and self.isEnabled()
+        border = rgba(palette.accent, 0.6) if hovered else palette.line_soft
+        draw_rounded_surface(self, palette.card_surface_hover, border, 7)
+        super().paintEvent(event)
+
+    def syncStyle(self):
+        palette = app_palette()
+        fg = palette.muted if self.isEnabled() else palette.subtle
+        self.setStyleSheet("QFrame { background: transparent; border: none; }")
+        self.label.setStyleSheet(f"color: {fg}; background: transparent; border: none;")
+        self.update()
+
+
+class StepperControl(QFrame):
+    """数值步进器（设计稿 .num-control）：[−] 值 单位 [+]。
+
+    参数面板里所有数值项统一用它（字号、描边、边距、圆角半径…），
+    支持整数/小数（``decimals``）、范围与步长，全自绘圆角。
+    """
+
+    valueChanged = pyqtSignal(float)
+
+    def __init__(
+        self,
+        value: float = 0,
+        minimum: float = 0,
+        maximum: float = 100,
+        step: float = 1,
+        decimals: int = 0,
+        suffix: str = "",
+        parent=None,
+        width: int = 150,
+    ):
+        super().__init__(parent)
+        self.setObjectName("wbStepper")
+        self._min = minimum
+        self._max = maximum
+        self._step = step
+        self._decimals = decimals
+        self._suffix = suffix
+        self._value = self._clamp(value)
+        self.setFixedHeight(34)
+        self.setFixedWidth(width)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(7, 0, 7, 0)
+        layout.setSpacing(6)
+        self.minusButton = _StepButton("−", self)
+        self.minusButton.clicked.connect(lambda: self._nudge(-self._step))
+        layout.addWidget(self.minusButton)
+
+        self.valueLabel = QLabel(self)
+        self.valueLabel.setObjectName("wbStepperValue")
+        self.valueLabel.setAlignment(Qt.AlignCenter)  # type: ignore[arg-type]
+        apply_font(self.valueLabel, 13, 850)
+        layout.addWidget(self.valueLabel, 1)
+
+        self.plusButton = _StepButton("+", self)
+        self.plusButton.clicked.connect(lambda: self._nudge(self._step))
+        layout.addWidget(self.plusButton)
+        self._refreshText()
+        self.syncStyle()
+
+    def _clamp(self, value: float) -> float:
+        return max(self._min, min(self._max, round(float(value), self._decimals)))
+
+    def value(self) -> float:
+        return self._value
+
+    def setValue(self, value: float, *, emit: bool = False):
+        clamped = self._clamp(value)
+        changed = clamped != self._value
+        self._value = clamped
+        self._refreshText()
+        if changed and emit:
+            self.valueChanged.emit(self._value)
+
+    def _nudge(self, delta: float):
+        before = self._value
+        self._value = self._clamp(self._value + delta)
+        if self._value != before:
+            self._refreshText()
+            self.valueChanged.emit(self._value)
+
+    def _refreshText(self):
+        if self._decimals > 0:
+            text = f"{self._value:.{self._decimals}f}"
+        else:
+            text = str(int(self._value))
+        if self._suffix:
+            text = f"{text} {self._suffix}"
+        self.valueLabel.setText(text)
+
+    def paintEvent(self, event):
+        palette = app_palette()
+        draw_rounded_surface(self, palette.field, palette.line, 9)
+        super().paintEvent(event)
+
+    def syncStyle(self):
+        palette = app_palette()
+        self.setStyleSheet("QFrame#wbStepper { background: transparent; border: none; }")
+        self.valueLabel.setStyleSheet(
+            f"color: {palette.text}; background: transparent; border: none;"
+        )
+        self.minusButton.syncStyle()
+        self.plusButton.syncStyle()
+        self.update()
 
 
 class ToggleCard(QFrame):

@@ -9,6 +9,7 @@ from PyQt5.QtCore import QByteArray, QSize, Qt
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import QAbstractButton, QApplication
+from qfluentwidgets.common.icon import FluentIconBase
 
 from videocaptioner.config import ASSETS_PATH
 
@@ -19,7 +20,9 @@ class AppIcon(StrEnum):
     """App-owned SVG icons in resource/assets/icons."""
 
     ADD = "add"
+    ALIGNMENT = "alignment"
     ARROW_LEFT = "arrow-left"
+    BRUSH = "brush"
     CANCEL = "cancel"
     CHEVRON_DOWN = "chevron-down"
     CLOSE = "close"
@@ -27,24 +30,66 @@ class AppIcon(StrEnum):
     DELETE = "delete"
     DOCUMENT = "document"
     DOWNLOAD = "download"
+    EDIT = "edit"
     FILE = "file"
     FOLDER = "folder"
     FOLDER_ADD = "folder_add"
+    FONT = "font"
+    FONT_SIZE = "font_size"
     GITHUB = "github"
+    GLOBE = "globe"
     HEART = "heart"
+    HISTORY = "history"
+    HOME = "home"
+    LANGUAGE = "language"
     LAYOUT = "layout"
     LINK = "link"
+    MENU = "menu"
+    MESSAGE = "message"
     MICROPHONE = "microphone"
     MUSIC = "music"
+    PALETTE = "palette"
+    PHOTO = "photo"
     PLAY = "play"
     RIGHT_ARROW = "right_arrow"
+    ROBOT = "robot"
     SAVE = "save"
+    SEARCH = "search"
     SETTING = "setting"
     SUBTITLE = "subtitle"
     SYNC = "sync"
     TERMINAL = "terminal"
     VIDEO = "video"
+    VIEW = "view"
     VOLUME = "volume"
+    ZOOM = "zoom"
+
+
+class AppFluentIcon(FluentIconBase):
+    """把 app 自有 SVG 包成 FluentIconBase，使其能像 FluentIcon 一样随主题/选中态着色，
+
+    可直接传给 qfluent 导航栏（addSubInterface）等需要 FluentIconBase 的接口。"""
+
+    def __init__(self, name: AppIcon | str):
+        self._name = str(name)
+
+    def path(self, theme=None) -> str:  # type: ignore[override]
+        return str(custom_icon_path(self._name))
+
+    def render(self, painter, rect, theme=None, indexes=None, **attributes):  # type: ignore[override]
+        from qfluentwidgets.common.icon import Theme, getIconColor
+        if theme is None:
+            theme = Theme.AUTO
+        # 我们的 SVG 用 currentColor，需主动按主题填色（亮/暗对应黑/白），否则渲染成黑色不可见。
+        attributes.setdefault("fill", getIconColor(theme))
+        super().render(painter, rect, theme, indexes, **attributes)
+
+    def icon(self, theme=None, color=None):  # type: ignore[override]
+        from qfluentwidgets.common.icon import SvgIconEngine, Theme, getIconColor, writeSvg
+        if theme is None:
+            theme = Theme.AUTO
+        fill = QColor(color).name() if color is not None else getIconColor(theme)
+        return QIcon(SvgIconEngine(writeSvg(self.path(theme), fill=fill)))
 
 
 def custom_icon_path(name: str | Path) -> Path:

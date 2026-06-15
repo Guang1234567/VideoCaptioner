@@ -657,6 +657,7 @@ class SynthesisConfig:
     subtitle_layout: SubtitleLayoutEnum = SubtitleLayoutEnum.ORIGINAL_ON_TOP
     # 字幕样式配置
     ass_style: str = ""  # ASS 样式字符串
+    ass_line_gap: int = 0  # ASS 主副字幕间距（双语时作用于上行的对话 MarginV）
     rounded_style: Optional[dict] = None  # 圆角背景样式配置
 
     def print_config(self) -> str:

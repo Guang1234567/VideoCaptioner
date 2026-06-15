@@ -540,6 +540,7 @@ def add_subtitles_with_style(
     crf: int = 23,
     preset: PresetType = "medium",
     progress_callback: Optional[Callable] = None,
+    ass_line_gap: int = 0,
 ) -> None:
     """
     根据渲染模式选择合成方式
@@ -580,4 +581,5 @@ def add_subtitles_with_style(
             crf=crf,
             preset=preset,
             progress_callback=progress_callback,
+            line_gap=ass_line_gap,
         )

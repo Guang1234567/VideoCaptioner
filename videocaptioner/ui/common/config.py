@@ -110,6 +110,8 @@ class Config(SettingsState):
         EnumSettingSerializer(ThemeMode),
     )
     themeColor = SettingField("UI", "ThemeColor", QColor(DEFAULT_THEME_COLOR))
+    # 取色器「最近使用」颜色（#AARRGGBB 字符串列表，最新在前）
+    recent_colors = SettingField("UI", "RecentColors", [])
     # 工作台页面右栏折叠状态（持久化）
     transcribe_panel_collapsed = SettingField(
         "UI", "TranscribePanelCollapsed", False, BoolValidator()
@@ -349,6 +351,14 @@ class Config(SettingsState):
         EnumSettingSerializer(SubtitleLayoutEnum),
     )
     subtitle_preview_image = SettingField("SubtitleStyle", "PreviewImage", "")
+    # 预览示例文字（原文 / 译文），可自定义
+    subtitle_preview_source = SettingField(
+        "SubtitleStyle", "PreviewSource",
+        "Welcome to apply for the prestigious South China Normal University!",
+    )
+    subtitle_preview_target = SettingField(
+        "SubtitleStyle", "PreviewTarget", "欢迎报考百年名校华南师范大学",
+    )
 
     # 字幕渲染模式
     subtitle_render_mode = ChoiceSettingField(

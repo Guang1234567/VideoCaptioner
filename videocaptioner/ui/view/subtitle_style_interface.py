@@ -1,19 +1,27 @@
+# coding:utf-8
+"""字幕样式页（三栏工作台）。
+
+对照 docs/dev/design-subtitle-style.html：左「样式库」(渲染模式分页 + 样式卡)、
+中「预览」(实时渲染当前样式)、右「参数」(分组参数行)。编辑即自动保存到当前
+用户样式（编辑内置样式时自动 fork 成用户样式），与合成页共用 subtitle_style_name。
+"""
+
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional, Tuple
 
-from PIL import ImageFont
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QFontDatabase
-from PyQt5.QtWidgets import QFileDialog, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
-from qfluentwidgets import (
-    BodyLabel,
-    ImageLabel,
-    InfoBar,
-    InfoBarPosition,
-    LineEdit,
-    ScrollArea,
+from PyQt5.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
 )
-from qfluentwidgets import FluentIcon as FIF
+from qfluentwidgets import ImageLabel, InfoBar, InfoBarPosition, ScrollArea
 
 from videocaptioner.config import ASSETS_PATH, USER_SUBTITLE_STYLE_PATH
 from videocaptioner.core.constant import INFOBAR_DURATION_SUCCESS, INFOBAR_DURATION_WARNING
@@ -37,110 +45,125 @@ from videocaptioner.core.utils.platform_utils import open_folder
 from videocaptioner.ui.common.app_icons import AppIcon
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.theme_tokens import app_palette
-from videocaptioner.ui.components.app_dialog import AppDialog
-from videocaptioner.ui.components.form_cards import FormGroup, PushFormCard
-from videocaptioner.ui.components.subtitle_style_controls import (
-    SubtitleStyleColorRow,
-    SubtitleStyleComboRow,
-    SubtitleStyleDoubleSpinRow,
-    SubtitleStyleLineEditRow,
-    SubtitleStyleSpinRow,
+from videocaptioner.ui.components.app_dialog import AppDialog, ConfirmDialog
+from videocaptioner.ui.components.inspector_controls import (
+    ColorValueControl,
+    InspectorGroup,
+    InspectorRow,
+    StyleCard,
+)
+from videocaptioner.ui.components.workbench import (
+    AppLineEdit,
+    CompactButton,
+    FilterTabs,
+    PillSelect,
+    SectionLabel,
+    StatusPill,
+    StepperControl,
+    ToggleSwitch,
+    WorkbenchButton,
+    WorkbenchPanel,
+    apply_font,
+    draw_rounded_surface,
 )
 
-CUSTOM_PREVIEW_TEXT = "自定义"
+# 预览示例文本（原文, 译文）——只用于样式预览，不进配置。
+PREVIEW_TEXT = ("Welcome to apply for the prestigious South China Normal University!", "欢迎报考百年名校华南师范大学")
 
-PERVIEW_TEXTS = {
-    "长文本": (
-        "This is a long text for testing subtitle preview, text wrapping, and style settings.",
-        "这是一段用于测试字幕预览、自动换行以及样式设置的较长文本内容。",
-    ),
-    "中文本": (
-        "Welcome to apply for the prestigious South China Normal University!",
-        "欢迎报考百年名校华南师范大学",
-    ),
-    "短文本": ("Elementary school students know this", "小学二年级的都知道"),
-}
+DEFAULT_BG_LANDSCAPE = ASSETS_PATH / "default_bg_landscape.png"
+DEFAULT_BG_PORTRAIT = ASSETS_PATH / "default_bg_portrait.png"
 
-DEFAULT_BG_LANDSCAPE = {
-    "path": ASSETS_PATH / "default_bg_landscape.png",
-    "width": 1280,
-    "height": 720,
-}
-DEFAULT_BG_PORTRAIT = {
-    "path": ASSETS_PATH / "default_bg_portrait.png",
-    "width": 480,
-    "height": 852,
-}
+_FONT_CHOICES: Optional[list[str]] = None
+
+
+def _font_choices() -> list[str]:
+    """字体下拉的候选：内置字体在前（已随程序打包，渲染最稳），其后接系统已装字体。
+
+    系统字体枚举略有开销且程序运行期不变，缓存一次即可。
+    """
+    global _FONT_CHOICES
+    if _FONT_CHOICES is not None:
+        return _FONT_CHOICES
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in get_builtin_fonts():
+        name = item["name"]
+        if name not in seen:
+            names.append(name)
+            seen.add(name)
+    for family in QFontDatabase().families():
+        if family not in seen:
+            names.append(family)
+            seen.add(family)
+    _FONT_CHOICES = names
+    return names
+
+
+# 对齐取值与显示文案（存 left/center/right，展示居左/居中/居右）。
+_ALIGN_ITEMS = (("left", "居左"), ("center", "居中"), ("right", "居右"))
+
+# 样式卡固定宽度（坞横向滚动按此累加内容宽度）。容纳一行「复制/重命名/删除」图标按钮。
+_CARD_WIDTH = 260
+
+
+def _rgba_hex_to_qcolor(hex_color: str) -> QColor:
+    raw = hex_color.lstrip("#")
+    if len(raw) == 8:
+        return QColor(int(raw[0:2], 16), int(raw[2:4], 16), int(raw[4:6], 16), int(raw[6:8], 16))
+    if len(raw) == 6:
+        return QColor(f"#{raw}")
+    return QColor(25, 25, 25, 200)
+
+
+def _qcolor_to_rgba_hex(color: QColor) -> str:
+    return f"#{color.red():02x}{color.green():02x}{color.blue():02x}{color.alpha():02x}"
+
+
+# ---------------------------------------------------------------------------
+# 预览线程：渲染异常不得 qFatal（裸抛会 abort 进程），失败打日志不 emit。
+# ---------------------------------------------------------------------------
 
 
 class AssPreviewThread(QThread):
-    """ASS 样式预览线程"""
-
     previewReady = pyqtSignal(str)
 
-    def __init__(
-        self,
-        preview_text: Tuple[str, Optional[str]],
-        style_str: str,
-        bg_image_path: str,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-    ):
+    def __init__(self, preview_text: Tuple[str, Optional[str]], style_str: str, bg_image_path: str, line_gap: int = 0):
         super().__init__()
         self.preview_text = preview_text
-        self.width = width
-        self.height = height
         self.style_str = style_str
         self.bg_image_path = bg_image_path
+        self.line_gap = line_gap
 
     def run(self):
-        # 渲染异常不得 qFatal（QThread.run 裸抛会 abort 整个进程），
-        # 失败打日志、不 emit；与 RoundedBgPreviewThread 同约定。
         try:
-            preview_path = render_ass_preview(
+            path = render_ass_preview(
                 style_str=self.style_str,
                 preview_text=self.preview_text,
+                line_gap=self.line_gap,
                 bg_image_path=self.bg_image_path,
-                width=self.width,
-                height=self.height,
             )
         except Exception:
             import traceback
 
             traceback.print_exc()
             return
-        self.previewReady.emit(preview_path)
+        self.previewReady.emit(path)
 
 
 class RoundedBgPreviewThread(QThread):
-    """圆角背景预览线程"""
-
     previewReady = pyqtSignal(str)
 
-    def __init__(
-        self,
-        style: RoundedBgStyle,
-        preview_text: Tuple[str, Optional[str]],
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        bg_image_path: Optional[str] = None,
-    ):
+    def __init__(self, preview_text: Tuple[str, Optional[str]], style: RoundedBgStyle, bg_image_path: str):
         super().__init__()
-        self.primary_text = preview_text[0]
-        self.secondary_text = preview_text[1] or ""
-        self.width = width
-        self.height = height
+        self.preview_text = preview_text
         self.style = style
         self.bg_image_path = bg_image_path
 
     def run(self):
-        # 同 AssPreviewThread：渲染异常不得 qFatal，失败打日志、不 emit。
         try:
-            preview_path = render_preview(
-                primary_text=self.primary_text,
-                secondary_text=self.secondary_text,
-                width=self.width,
-                height=self.height,
+            path = render_preview(
+                primary_text=self.preview_text[0],
+                secondary_text=self.preview_text[1] or "",
                 style=self.style,
                 bg_image_path=self.bg_image_path,
             )
@@ -149,7 +172,21 @@ class RoundedBgPreviewThread(QThread):
 
             traceback.print_exc()
             return
-        self.previewReady.emit(preview_path)
+        self.previewReady.emit(path)
+
+
+class _Stage(QFrame):
+    """预览舞台容器：自绘圆角底，居中放预览图。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("styleStage")
+        self.setStyleSheet("QFrame#styleStage { background: transparent; border: none; }")
+
+    def paintEvent(self, event):
+        palette = app_palette()
+        draw_rounded_surface(self, palette.field, palette.line_soft, 14)
+        super().paintEvent(event)
 
 
 class SubtitleStyleInterface(QWidget):
@@ -157,933 +194,885 @@ class SubtitleStyleInterface(QWidget):
         super().__init__(parent=parent)
         self.setObjectName("SubtitleStyleInterface")
         self.setWindowTitle(self.tr("字幕样式配置"))
-        # 普通 QWidget 需要该属性才会绘制 QSS 背景色
         self.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore[arg-type]
-        self.setAcceptDrops(True)  # 启用拖放功能
-        self.preview_thread: QThread | None = None
+        self.setAcceptDrops(True)
+
+        self._loading = False  # 程序化更新控件时抑制自动保存
+        self._mode_key = self._renderer_key()  # 当前渲染模式的唯一真源（不依赖控件状态）
+        self._orientation = "横屏"
         self._preview_threads: list[QThread] = []
         self._preview_generation = 0
-        self._style_display_to_id: dict[str, str] = {}
-        self._style_id_to_display: dict[str, str] = {}
+        self._cards: list[StyleCard] = []
+        # 渲染模式专属控件引用（重建参数面板时刷新）
+        self._ass: dict = {}
+        self._rounded: dict = {}
 
-        # 创建主布局
-        self.hBoxLayout = QHBoxLayout(self)
+        self._build_ui()
+        self._on_mode_changed(self._renderer_key(), initial=True)
 
-        # 初始化界面组件
-        self._initSettingsArea()
-        self._initPreviewArea()
-        self._init_setting_rows()
-        self._initLayout()
-        self._initStyle()
+    # ---------------------------------------------------------------- 构建
 
-        # 控制是否触发样式变更回调（加载样式时禁用）
-        self._loading_style = False
+    def _build_ui(self):
+        # 上下左右两栏布局：左上预览（占主空间）、左下样式坞、右侧参数（通栏）。
+        # 让预览尽量大，样式库收到底部横向陈列。
+        root = QGridLayout(self)
+        root.setContentsMargins(22, 22, 22, 22)
+        root.setHorizontalSpacing(18)
+        root.setVerticalSpacing(18)
+        preview = self._build_preview()
+        inspector = self._build_inspector()
+        dock = self._build_dock()
+        root.addWidget(preview, 0, 0)
+        root.addWidget(inspector, 0, 1, 2, 1)
+        root.addWidget(dock, 1, 0)
+        root.setColumnStretch(0, 1)
+        root.setColumnStretch(1, 0)
+        root.setRowStretch(0, 1)
+        root.setRowStretch(1, 0)
+        self._apply_page_style()
 
-        # 设置初始值,加载样式
-        self.__setValues()
+    def _build_dock(self) -> QWidget:
+        """底部样式坞：单行横向陈列所有样式卡，点选即高亮（卡片定高，不重排不闪动）。
 
-        # 连接信号
-        self.connectSignals()
-        self.updatePreview()
-
-    def _initSettingsArea(self):
-        """初始化左侧设置区域"""
-        self.settingsScrollArea = ScrollArea()
-        self.settingsScrollArea.setFixedWidth(390)
-        self.settingsScrollArea.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        self.settingsWidget = QWidget()
-        self.settingsLayout = QVBoxLayout(self.settingsWidget)
-        self.settingsLayout.setContentsMargins(20, 20, 20, 20)
-        self.settingsLayout.setSpacing(18)
-        self.settingsScrollArea.setWidget(self.settingsWidget)
-        self.settingsScrollArea.setWidgetResizable(True)
-        # qfluent ScrollArea 自带不透明底色，会在页面上压出一块黑色矩形；
-        # 透明化后与页面统一用窗口背景色。
-        self.settingsScrollArea.enableTransparentBackground()
-
-        # 创建设置组 - 通用
-        self.layoutGroup = FormGroup(self.tr("字幕排布"), self.settingsWidget)
-
-        # ASS 样式设置组
-        self.assPrimaryGroup = FormGroup(
-            self.tr("主字幕样式"), self.settingsWidget
-        )
-        self.assSecondaryGroup = FormGroup(
-            self.tr("副字幕样式"), self.settingsWidget
-        )
-
-        # 圆角背景设置组
-        self.roundedBgGroup = FormGroup(
-            self.tr("圆角背景样式"), self.settingsWidget
-        )
-
-        # 预览设置组
-        self.previewGroup = FormGroup(self.tr("预览设置"), self.settingsWidget)
-
-    def _initPreviewArea(self):
-        """初始化右侧预览区域"""
-        self.previewCard = QFrame()
-        self.previewCard.setObjectName("subtitleStylePreviewCard")
-        self.previewCard.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore[arg-type]
-        self.previewCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.previewLayout = QVBoxLayout(self.previewCard)
-        self.previewLayout.setContentsMargins(24, 24, 24, 24)
-        self.previewLayout.setSpacing(16)
-
-        # 顶部预览区域
-        self.previewTopWidget = QWidget()
-        self.previewTopWidget.setMinimumHeight(320)
-        self.previewTopWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.previewTopLayout = QVBoxLayout(self.previewTopWidget)
-
-        self.previewLabel = BodyLabel(self.tr("预览效果"))
-        self.previewImage = ImageLabel()
-        self.previewImage.setAlignment(Qt.AlignCenter)  # type: ignore
-        self.previewTopLayout.addWidget(self.previewImage, 0, Qt.AlignCenter)  # type: ignore
-        self.previewTopLayout.setAlignment(Qt.AlignVCenter)  # type: ignore
-
-        # 底部控件区域
-        self.previewBottomWidget = QWidget()
-        self.previewBottomWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.previewBottomLayout = QVBoxLayout(self.previewBottomWidget)
-
-        self.styleNameComboBox = SubtitleStyleComboRow(
-            FIF.VIEW,  # type: ignore
-            self.tr("选择样式"),
-            self.tr("选择已保存的字幕样式"),
-            texts=[],  # type: ignore
-        )
-
-        self.newStyleButton = PushFormCard(
-            self.tr("新建样式"),
-            FIF.ADD,
-            self.tr("新建样式"),
-            self.tr("基于当前样式新建预设"),
-        )
-
-        self.openStyleFolderButton = PushFormCard(
-            self.tr("打开样式文件夹"),
-            FIF.FOLDER,
-            self.tr("打开样式文件夹"),
-            self.tr("在文件管理器中打开样式文件夹"),
-        )
-        self.deleteStyleButton = PushFormCard(
-            self.tr("删除样式"),
-            FIF.DELETE,
-            self.tr("删除样式"),
-            self.tr("仅可删除我的样式"),
-        )
-
-        self.previewActionsGroup = FormGroup(self.tr("样式管理"), self.previewBottomWidget)
-        self.previewActionsGroup.addCard(self.styleNameComboBox)
-        self.previewActionsGroup.addCard(self.newStyleButton)
-        self.previewActionsGroup.addCard(self.deleteStyleButton)
-        self.previewActionsGroup.addCard(self.openStyleFolderButton)
-        self.previewBottomLayout.addWidget(self.previewActionsGroup)
-
-        self.previewLayout.addWidget(self.previewTopWidget, 1)
-        self.previewLayout.addWidget(self.previewBottomWidget, 0)
-
-    def _init_setting_rows(self):
-        """初始化所有设置卡片"""
-        # 渲染模式切换
-        self.renderModeCard = SubtitleStyleComboRow(
-            FIF.BRUSH,  # type: ignore
-            self.tr("渲染模式"),
-            self.tr("选择字幕渲染方式"),
-            texts=[e.value for e in SubtitleRenderModeEnum],
-        )
-
-        # 字幕排布设置
-        self.layoutCard = SubtitleStyleComboRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("字幕排布"),
-            self.tr("设置主字幕和副字幕的显示方式"),
-            texts=["译文在上", "原文在上", "仅译文", "仅原文"],
-        )
-
-        # ASS 模式 - 垂直间距
-        self.assVerticalSpacingCard = SubtitleStyleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("垂直间距"),
-            self.tr("设置字幕的垂直间距"),
-            minimum=8,
-            maximum=10000,
-        )
-
-        # ASS 模式 - 主字幕样式
-        self.assPrimaryFontCard = SubtitleStyleComboRow(
-            FIF.FONT,  # type: ignore
-            self.tr("主字幕字体"),
-            self.tr("设置主字幕的字体"),
-        )
-
-        self.assPrimarySizeCard = SubtitleStyleSpinRow(
-            FIF.FONT_SIZE,  # type: ignore
-            self.tr("主字幕字号"),
-            self.tr("设置主字幕的大小"),
-            minimum=8,
-            maximum=1000,
-        )
-
-        self.assPrimarySpacingCard = SubtitleStyleDoubleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("主字幕间距"),
-            self.tr("设置主字幕的字符间距"),
-            minimum=0.0,
-            maximum=10.0,
-            decimals=1,
-        )
-
-        self.assPrimaryColorCard = SubtitleStyleColorRow(
-            QColor(255, 255, 255),
-            FIF.PALETTE,  # type: ignore
-            self.tr("主字幕颜色"),
-            self.tr("设置主字幕的颜色"),
-        )
-
-        self.assPrimaryOutlineColorCard = SubtitleStyleColorRow(
-            QColor(0, 0, 0),
-            FIF.PALETTE,  # type: ignore
-            self.tr("主字幕边框颜色"),
-            self.tr("设置主字幕的边框颜色"),
-        )
-
-        self.assPrimaryOutlineSizeCard = SubtitleStyleDoubleSpinRow(
-            FIF.ZOOM,  # type: ignore
-            self.tr("主字幕边框大小"),
-            self.tr("设置主字幕的边框粗细"),
-            minimum=0.0,
-            maximum=10.0,
-            decimals=1,
-        )
-
-        # ASS 模式 - 副字幕样式
-        self.assSecondaryFontCard = SubtitleStyleComboRow(
-            FIF.FONT,  # type: ignore
-            self.tr("副字幕字体"),
-            self.tr("设置副字幕的字体"),
-        )
-
-        self.assSecondarySizeCard = SubtitleStyleSpinRow(
-            FIF.FONT_SIZE,  # type: ignore
-            self.tr("副字幕字号"),
-            self.tr("设置副字幕的大小"),
-            minimum=8,
-            maximum=1000,
-        )
-
-        self.assSecondarySpacingCard = SubtitleStyleDoubleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("副字幕间距"),
-            self.tr("设置副字幕的字符间距"),
-            minimum=0.0,
-            maximum=50.0,
-            decimals=1,
-        )
-
-        self.assSecondaryColorCard = SubtitleStyleColorRow(
-            QColor(255, 255, 255),
-            FIF.PALETTE,  # type: ignore
-            self.tr("副字幕颜色"),
-            self.tr("设置副字幕的颜色"),
-        )
-
-        self.assSecondaryOutlineColorCard = SubtitleStyleColorRow(
-            QColor(0, 0, 0),
-            FIF.PALETTE,  # type: ignore
-            self.tr("副字幕边框颜色"),
-            self.tr("设置副字幕的边框颜色"),
-        )
-
-        self.assSecondaryOutlineSizeCard = SubtitleStyleDoubleSpinRow(
-            FIF.ZOOM,  # type: ignore
-            self.tr("副字幕边框大小"),
-            self.tr("设置副字幕的边框粗细"),
-            minimum=0.0,
-            maximum=50.0,
-            decimals=1,
-        )
-
-        # 圆角背景样式设置
-        self.roundedFontCard = SubtitleStyleComboRow(
-            FIF.FONT,  # type: ignore
-            self.tr("字体"),
-            self.tr("设置字幕字体"),
-        )
-
-        self.roundedFontSizeCard = SubtitleStyleSpinRow(
-            FIF.FONT_SIZE,  # type: ignore
-            self.tr("字体大小"),
-            self.tr("设置字幕字体大小"),
-            minimum=16,
-            maximum=120,
-        )
-
-        self.roundedTextColorCard = SubtitleStyleColorRow(
-            QColor(255, 255, 255),
-            FIF.PALETTE,  # type: ignore
-            self.tr("文字颜色"),
-            self.tr("设置字幕文字颜色"),
-        )
-
-        self.roundedBgColorCard = SubtitleStyleColorRow(
-            QColor(25, 25, 25, 200),
-            FIF.PALETTE,  # type: ignore
-            self.tr("背景颜色"),
-            self.tr("设置圆角矩形背景颜色"),
-            enableAlpha=True,
-        )
-
-        self.roundedCornerRadiusCard = SubtitleStyleSpinRow(
-            FIF.ZOOM,  # type: ignore
-            self.tr("圆角半径"),
-            self.tr("设置背景圆角大小"),
-            minimum=0,
-            maximum=50,
-        )
-
-        self.roundedPaddingHCard = SubtitleStyleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("水平内边距"),
-            self.tr("文字与背景边缘的水平距离"),
-            minimum=4,
-            maximum=100,
-        )
-
-        self.roundedPaddingVCard = SubtitleStyleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("垂直内边距"),
-            self.tr("文字与背景边缘的垂直距离"),
-            minimum=4,
-            maximum=50,
-        )
-
-        self.roundedMarginBottomCard = SubtitleStyleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("底部边距"),
-            self.tr("字幕距视频底部的距离"),
-            minimum=20,
-            maximum=300,
-        )
-
-        self.roundedLineSpacingCard = SubtitleStyleSpinRow(
-            FIF.ALIGNMENT,  # type: ignore
-            self.tr("行间距"),
-            self.tr("双语字幕的行间距"),
-            minimum=0,
-            maximum=50,
-        )
-
-        self.roundedLetterSpacingCard = SubtitleStyleSpinRow(
-            FIF.FONT,  # type: ignore
-            self.tr("字符间距"),
-            self.tr("每个字符之间的额外间距"),
-            minimum=0,
-            maximum=20,
-            step=1,
-        )
-
-        # 预览设置
-        self.previewTextCard = SubtitleStyleComboRow(
-            FIF.MESSAGE,  # type: ignore
-            self.tr("预览文字"),
-            self.tr("设置预览显示的文字内容"),
-            texts=[*PERVIEW_TEXTS.keys(), CUSTOM_PREVIEW_TEXT],
-            parent=self.previewGroup,
-        )
-
-        self.previewOriginalTextCard = SubtitleStyleLineEditRow(
-            FIF.MESSAGE,  # type: ignore
-            self.tr("原文"),
-            self.tr("预览中使用的原文内容"),
-            placeholder=self.tr("输入原文"),
-            parent=self.previewGroup,
-        )
-
-        self.previewTranslationTextCard = SubtitleStyleLineEditRow(
-            FIF.MESSAGE,  # type: ignore
-            self.tr("译文"),
-            self.tr("预览中使用的译文内容"),
-            placeholder=self.tr("输入译文"),
-            parent=self.previewGroup,
-        )
-
-        self.orientationCard = SubtitleStyleComboRow(
-            FIF.LAYOUT,  # type: ignore
-            self.tr("预览方向"),
-            self.tr("设置预览图片的显示方向"),
-            texts=["横屏", "竖屏"],
-            parent=self.previewGroup,
-        )
-
-        self.previewImageCard = PushFormCard(
-            self.tr("选择图片"),
-            FIF.PHOTO,
-            self.tr("预览背景"),
-            self.tr("选择预览使用的背景图片"),
-            parent=self.previewGroup,
-        )
-
-    def _initLayout(self):
-        """初始化布局"""
-        self.hBoxLayout.setContentsMargins(26, 20, 26, 22)
-        self.hBoxLayout.setSpacing(24)
-        # 通用设置
-        self.layoutGroup.addCard(self.renderModeCard)
-        self.layoutGroup.addCard(self.layoutCard)
-        self.layoutGroup.addCard(self.assVerticalSpacingCard)
-
-        # ASS 样式卡片
-        self.assPrimaryGroup.addCard(self.assPrimaryFontCard)
-        self.assPrimaryGroup.addCard(self.assPrimarySizeCard)
-        self.assPrimaryGroup.addCard(self.assPrimarySpacingCard)
-        self.assPrimaryGroup.addCard(self.assPrimaryColorCard)
-        self.assPrimaryGroup.addCard(self.assPrimaryOutlineColorCard)
-        self.assPrimaryGroup.addCard(self.assPrimaryOutlineSizeCard)
-
-        self.assSecondaryGroup.addCard(self.assSecondaryFontCard)
-        self.assSecondaryGroup.addCard(self.assSecondarySizeCard)
-        self.assSecondaryGroup.addCard(self.assSecondarySpacingCard)
-        self.assSecondaryGroup.addCard(self.assSecondaryColorCard)
-        self.assSecondaryGroup.addCard(self.assSecondaryOutlineColorCard)
-        self.assSecondaryGroup.addCard(self.assSecondaryOutlineSizeCard)
-
-        # 圆角背景卡片
-        self.roundedBgGroup.addCard(self.roundedFontCard)
-        self.roundedBgGroup.addCard(self.roundedFontSizeCard)
-        self.roundedBgGroup.addCard(self.roundedTextColorCard)
-        self.roundedBgGroup.addCard(self.roundedBgColorCard)
-        self.roundedBgGroup.addCard(self.roundedCornerRadiusCard)
-        self.roundedBgGroup.addCard(self.roundedPaddingHCard)
-        self.roundedBgGroup.addCard(self.roundedPaddingVCard)
-        self.roundedBgGroup.addCard(self.roundedMarginBottomCard)
-        self.roundedBgGroup.addCard(self.roundedLineSpacingCard)
-        self.roundedBgGroup.addCard(self.roundedLetterSpacingCard)
-
-        # 预览设置
-        self.previewGroup.addCard(self.previewTextCard)
-        self.previewGroup.addCard(self.previewOriginalTextCard)
-        self.previewGroup.addCard(self.previewTranslationTextCard)
-        self.previewGroup.addCard(self.orientationCard)
-        self.previewGroup.addCard(self.previewImageCard)
-
-        # 添加组到布局
-        self.settingsLayout.addWidget(self.layoutGroup)
-        self.settingsLayout.addWidget(self.assPrimaryGroup)
-        self.settingsLayout.addWidget(self.assSecondaryGroup)
-        self.settingsLayout.addWidget(self.roundedBgGroup)
-        self.settingsLayout.addWidget(self.previewGroup)
-        self.settingsLayout.addStretch(1)
-
-        # 添加左右两侧到主布局
-        self.hBoxLayout.addWidget(self.settingsScrollArea, 0)
-        self.hBoxLayout.addWidget(self.previewCard, 1)
-
-    def _initStyle(self):
-        """初始化样式"""
-        palette = app_palette()
-        self.settingsWidget.setObjectName("settingsWidget")
-        self.setStyleSheet(
-            f"""
-            SubtitleStyleInterface, #settingsWidget {{
-                background-color: {palette.bg};
-            }}
-            QScrollArea {{
-                border: none;
-                background-color: transparent;
-            }}
-            QWidget#subtitleStylePreviewCard, #subtitleStylePreviewCard {{
-                background-color: {palette.panel};
-                border: 1px solid {palette.line};
-                border-radius: 12px;
-            }}
+        坞高 = 头部(58) + 分隔线(1) + 轨道视口(卡片 126 + 上下内边距 24 = 150) = 209，
+        刚好容纳一行卡片：横向滚动条是叠加层不占高度，视口与卡片等高则既不截断也不留空白。
         """
+        panel = WorkbenchPanel(padded=False)
+        panel.setFixedHeight(209)
+        layout = panel.bodyLayout
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(14, 10, 14, 10)
+        head.setSpacing(12)
+        is_rounded = self._renderer_key() == "rounded"
+        self.modeTabs = FilterTabs(
+            [("ass", self.tr("ASS 描边")), ("rounded", self.tr("圆角背景"))]
         )
-        self.previewCard.setStyleSheet(
-            f"""
-            QWidget#subtitleStylePreviewCard, #subtitleStylePreviewCard {{
-                background-color: {palette.panel};
-                border: 1px solid {palette.line};
-                border-radius: 12px;
-            }}
-            """
+        self.modeTabs.setCurrent("rounded" if is_rounded else "ass")
+        self.modeTabs.changed.connect(self._on_mode_changed)
+        head.addWidget(self.modeTabs)
+        head.addStretch(1)
+        self.countChip = StatusPill("", "neutral")
+        head.addWidget(self.countChip)
+        self.newButton = WorkbenchButton(self.tr("新建"), AppIcon.ADD, primary=True, height=34)
+        self.newButton.clicked.connect(self._on_new_style)
+        self.folderButton = WorkbenchButton(self.tr("目录"), AppIcon.FOLDER, height=34)
+        self.folderButton.clicked.connect(lambda: open_folder(str(USER_SUBTITLE_STYLE_PATH)))
+        head.addWidget(self.newButton)
+        head.addWidget(self.folderButton)
+        layout.addLayout(head)
+        layout.addWidget(self._hline())
+
+        # 单行横向滚动陈列所有样式
+        self.trackScroll = ScrollArea()
+        self.trackScroll.setWidgetResizable(True)
+        self.trackScroll.enableTransparentBackground()
+        self.trackScroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore[arg-type]
+        self.trackBody = QWidget()
+        self.trackBody.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore[arg-type]
+        self.trackBody.setStyleSheet("background: transparent;")
+        self.trackLayout = QHBoxLayout(self.trackBody)
+        self.trackLayout.setContentsMargins(14, 12, 14, 12)
+        self.trackLayout.setSpacing(12)
+        self.trackLayout.addStretch(1)
+        self.trackScroll.setWidget(self.trackBody)
+        layout.addWidget(self.trackScroll, 1)
+        return panel
+
+    def _build_preview(self) -> QWidget:
+        panel = WorkbenchPanel(padded=False)
+        panel.setMinimumWidth(380)
+        layout = panel.bodyLayout
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 头部与「参数」栏同款（16/14/16/13 内边距、17/880 标题），标题随 HBox 垂直居中，
+        # 与右侧 32 高按钮对齐——不再借用 PanelHeader（其自带 18px 底边距会顶高标题）。
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(16, 14, 16, 13)
+        toolbar.setSpacing(10)
+        self.previewTitle = SectionLabel(self.tr("预览"))
+        apply_font(self.previewTitle, 17, 880)
+        toolbar.addWidget(self.previewTitle)
+        toolbar.addStretch(1)
+        self.textButton = CompactButton(self.tr("预览文字"), AppIcon.FONT)
+        self.textButton.clicked.connect(self._edit_preview_text)
+        self.orientationButton = CompactButton(self.tr("横屏预览"), AppIcon.LAYOUT)
+        self.orientationButton.clicked.connect(self._toggle_orientation)
+        self.bgButton = CompactButton(self.tr("更换背景"), AppIcon.PHOTO)
+        self.bgButton.clicked.connect(self._pick_background)
+        for btn in (self.textButton, self.orientationButton, self.bgButton):
+            toolbar.addWidget(btn)
+        layout.addLayout(toolbar)
+        layout.addWidget(self._hline())
+
+        body = QVBoxLayout()
+        body.setContentsMargins(12, 10, 12, 12)
+        body.setSpacing(0)
+        self.stage = _Stage()
+        stage_layout = QVBoxLayout(self.stage)
+        stage_layout.setContentsMargins(10, 10, 10, 10)  # 细边框留薄边，预览图尽量铺满舞台
+        self.previewImage = ImageLabel(self.stage)
+        self.previewImage.setAlignment(Qt.AlignCenter)  # type: ignore[arg-type]
+        stage_layout.addWidget(self.previewImage, 0, Qt.AlignCenter)  # type: ignore[arg-type]
+        body.addWidget(self.stage, 1)
+        layout.addLayout(body)
+        return panel
+
+    def _build_inspector(self) -> QWidget:
+        panel = WorkbenchPanel(padded=False)
+        panel.setMinimumWidth(360)
+        panel.setMaximumWidth(398)
+        layout = panel.bodyLayout
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # 自定义头：与「样式库」头同款 16px 内边距，让"参数"标题与下面的分组左对齐。
+        head = QHBoxLayout()
+        head.setContentsMargins(16, 14, 16, 13)
+        title = SectionLabel(self.tr("参数"))
+        apply_font(title, 17, 880)
+        head.addWidget(title)
+        head.addStretch(1)
+        self.autoSavePill = StatusPill(self.tr("自动保存"), "ok")
+        head.addWidget(self.autoSavePill)
+        layout.addLayout(head)
+        layout.addWidget(self._hline())
+
+        scroll = ScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.enableTransparentBackground()
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore[arg-type]
+        self.inspectorBody = QWidget()
+        self.inspectorBody.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore[arg-type]
+        self.inspectorBody.setStyleSheet("background: transparent;")
+        self.inspectorLayout = QVBoxLayout(self.inspectorBody)
+        self.inspectorLayout.setContentsMargins(16, 16, 16, 16)
+        self.inspectorLayout.setSpacing(18)
+        self.inspectorLayout.addStretch(1)
+        scroll.setWidget(self.inspectorBody)
+        layout.addWidget(scroll, 1)
+        return panel
+
+    def _hline(self) -> QFrame:
+        line = QFrame()
+        line.setFixedHeight(1)
+        palette = app_palette()
+        line.setStyleSheet(f"background: {palette.line_soft}; border: none;")
+        return line
+
+    # ---------------------------------------------------------------- 渲染模式
+
+    def _renderer_key(self) -> str:
+        mode = cfg.subtitle_render_mode.value
+        return "rounded" if mode == SubtitleRenderModeEnum.ROUNDED_BG else "ass"
+
+    def _on_mode_changed(self, key: str, initial: bool = False):
+        mode = (
+            SubtitleRenderModeEnum.ROUNDED_BG
+            if key == "rounded"
+            else SubtitleRenderModeEnum.ASS_STYLE
         )
-        self.previewTopWidget.setStyleSheet("background: transparent; border: none;")
-        self.previewBottomWidget.setStyleSheet("background: transparent; border: none;")
+        if not initial:
+            cfg.set(cfg.subtitle_render_mode, mode)
+        self._rebuild_inspector(key)
+        self._refresh_style_list()
 
-    def syncStyle(self) -> None:  # noqa: N802
-        self._initStyle()
-        for group in [
-            self.layoutGroup,
-            self.assPrimaryGroup,
-            self.assSecondaryGroup,
-            self.roundedBgGroup,
-            self.previewGroup,
-            self.previewActionsGroup,
-        ]:
-            group.syncStyle()
+    # ---------------------------------------------------------------- 参数面板
 
-    def __setValues(self):
-        """设置初始值"""
-        # 设置渲染模式
-        self.renderModeCard.comboBox.setCurrentText(
-            cfg.subtitle_render_mode.value.value
-        )
+    def _clear_inspector(self):
+        while self.inspectorLayout.count() > 1:  # 保留末尾 stretch
+            item = self.inspectorLayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                # 先脱离父级立即从显示移除：deleteLater 是异步的，
+                # 否则重建时旧控件未销毁会与新控件叠成重影。
+                widget.setParent(None)
+                widget.deleteLater()
 
-        # 设置字幕排布
-        self.layoutCard.comboBox.setCurrentText(cfg.subtitle_layout.value.value)
+    def _stepper(self, value, minimum, maximum, step=1, decimals=0, suffix=""):
+        ctl = StepperControl(value, minimum, maximum, step, decimals, suffix, width=124)
+        ctl.valueChanged.connect(self._on_edit)
+        return ctl
 
-        # 设置字幕样式
-        self.styleNameComboBox.comboBox.setCurrentText(cfg.get(cfg.subtitle_style_name))
+    def _font_select(self) -> PillSelect:
+        """字体下拉：与「双语顺序」同款胶囊（设计语言一致），内置 + 系统字体，
 
-        # 获取字体列表（内置字体 + 系统字体）
-        builtin_fonts = get_builtin_fonts()
-        builtin_font_names = [f["name"] for f in builtin_fonts]
+        候选很多时菜单自动限高滚动。先填充再接信号，避免初始填充误触自动保存。"""
+        pill = PillSelect()
+        pill.setItems(_font_choices())
+        pill.currentTextChanged.connect(lambda _t: self._on_edit())
+        return pill
 
-        fontDatabase = QFontDatabase()
-        fontFamilies = fontDatabase.families()
-
-        # 过滤系统字体：
-        # 1. 排除私有字体（以 . 开头）
-        # 2. 排除已有的内置字体
-        # 3. 只保留 PIL 能实际加载的字体（用于圆角背景渲染）
-        system_fonts = []
-        for font_name in fontFamilies:
-            if font_name.startswith(".") or font_name in builtin_font_names:
-                continue
-            # 测试 PIL 是否能加载此字体
-            try:
-                ImageFont.truetype(font_name, 12)  # 测试用小尺寸
-                system_fonts.append(font_name)
-            except (OSError, IOError):
-                # PIL 无法加载，跳过此字体
-                pass
-
-        # 合并字体列表：内置字体在最前面
-        all_fonts = builtin_font_names + sorted(system_fonts)
-
-        # ASS 模式字体
-        self.assPrimaryFontCard.addItems(all_fonts)
-        self.assSecondaryFontCard.addItems(all_fonts)
-        self.assPrimaryFontCard.comboBox.setMaxVisibleItems(12)
-        self.assSecondaryFontCard.comboBox.setMaxVisibleItems(12)
-
-        # 圆角背景模式字体
-        self.roundedFontCard.addItems(all_fonts)
-        self.roundedFontCard.comboBox.setMaxVisibleItems(12)
-
-        # 加载样式列表（根据当前模式）
-        self._refreshStyleList()
-
-        # 根据当前渲染模式显示/隐藏设置组
-        self._updateVisibleGroups()
-        self._apply_preview_text_preset(update=False)
-
-    def connectSignals(self):
-        """连接所有设置变更的信号到预览更新函数"""
-        # 渲染模式切换
-        self.renderModeCard.currentTextChanged.connect(self.onRenderModeChanged)
-
-        # 字幕排布（通用设置）
-        self.layoutCard.currentTextChanged.connect(self.updatePreview)
-        self.layoutCard.currentTextChanged.connect(
-            lambda: cfg.set(
-                cfg.subtitle_layout,
-                SubtitleLayoutEnum(self.layoutCard.comboBox.currentText()),
-            )
-        )
-        # ASS 模式 - 垂直间距
-        self.assVerticalSpacingCard.spinBox.valueChanged.connect(
-            self.onAssSettingChanged
-        )
-
-        # ASS 模式 - 主字幕样式
-        self.assPrimaryFontCard.currentTextChanged.connect(self.onAssSettingChanged)
-        self.assPrimarySizeCard.spinBox.valueChanged.connect(self.onAssSettingChanged)
-        self.assPrimarySpacingCard.spinBox.valueChanged.connect(
-            self.onAssSettingChanged
-        )
-        self.assPrimaryColorCard.colorChanged.connect(self.onAssSettingChanged)
-        self.assPrimaryOutlineColorCard.colorChanged.connect(self.onAssSettingChanged)
-        self.assPrimaryOutlineSizeCard.spinBox.valueChanged.connect(
-            self.onAssSettingChanged
-        )
-
-        # ASS 模式 - 副字幕样式
-        self.assSecondaryFontCard.currentTextChanged.connect(self.onAssSettingChanged)
-        self.assSecondarySizeCard.spinBox.valueChanged.connect(self.onAssSettingChanged)
-        self.assSecondarySpacingCard.spinBox.valueChanged.connect(
-            self.onAssSettingChanged
-        )
-        self.assSecondaryColorCard.colorChanged.connect(self.onAssSettingChanged)
-        self.assSecondaryOutlineColorCard.colorChanged.connect(self.onAssSettingChanged)
-        self.assSecondaryOutlineSizeCard.spinBox.valueChanged.connect(
-            self.onAssSettingChanged
-        )
-
-        # 圆角背景样式信号
-        self.roundedFontCard.currentTextChanged.connect(self.onRoundedBgSettingChanged)
-        self.roundedFontSizeCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedTextColorCard.colorChanged.connect(self.onRoundedBgSettingChanged)
-        self.roundedBgColorCard.colorChanged.connect(self.onRoundedBgSettingChanged)
-        self.roundedCornerRadiusCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedPaddingHCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedPaddingVCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedMarginBottomCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedLineSpacingCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-        self.roundedLetterSpacingCard.spinBox.valueChanged.connect(
-            self.onRoundedBgSettingChanged
-        )
-
-        # 预览设置（通用设置）
-        self.previewTextCard.currentTextChanged.connect(self._apply_preview_text_preset)
-        self.previewOriginalTextCard.textChanged.connect(self.updatePreview)
-        self.previewTranslationTextCard.textChanged.connect(self.updatePreview)
-        self.orientationCard.currentTextChanged.connect(self.onOrientationChanged)
-        self.previewImageCard.clicked.connect(self.selectPreviewImage)
-
-        # 连接样式切换信号
-        self.styleNameComboBox.currentTextChanged.connect(self.loadStyle)
-        self.newStyleButton.clicked.connect(self.createNewStyle)
-        self.deleteStyleButton.clicked.connect(self.deleteCurrentStyle)
-        self.openStyleFolderButton.clicked.connect(self.on_open_style_folder_clicked)
-
-        # 连接字幕排布信号
-        self.layoutCard.comboBox.currentTextChanged.connect(self.on_subtitle_layout_changed)
-        cfg.subtitle_layout.valueChanged.connect(
-            lambda value: self.on_subtitle_layout_changed(value.value)
-        )
-
-        # 连接渲染模式信号（从视频合成界面同步）
-        cfg.subtitle_render_mode.valueChanged.connect(
-            lambda value: self.on_render_mode_changed_external(value.value)
-        )
-
-    def on_open_style_folder_clicked(self):
-        """打开样式文件夹"""
-        USER_SUBTITLE_STYLE_PATH.mkdir(parents=True, exist_ok=True)
-        open_folder(str(USER_SUBTITLE_STYLE_PATH))
-
-    def on_subtitle_layout_changed(self, layout: str):
-        layout_enum = SubtitleLayoutEnum(layout)
-        cfg.set(cfg.subtitle_layout, layout_enum)
-        self.layoutCard.setCurrentText(layout)
-
-    def on_render_mode_changed_external(self, mode_text: str):
-        """处理外部渲染模式变更（从视频合成界面同步）"""
-        # 避免信号循环：阻断信号后再更新
-        self.renderModeCard.comboBox.blockSignals(True)
-        self.renderModeCard.comboBox.setCurrentText(mode_text)
-        self.renderModeCard.comboBox.blockSignals(False)
-        # 手动触发 UI 更新
-        self._updateVisibleGroups()
-        self._refreshStyleList()
-        self.updatePreview()
-
-    def onRenderModeChanged(self):
-        """渲染模式切换（本界面触发）"""
-        mode_text = self.renderModeCard.comboBox.currentText()
-        mode = SubtitleRenderModeEnum(mode_text)
-        cfg.set(cfg.subtitle_render_mode, mode)
-        self._updateVisibleGroups()
-        self._refreshStyleList()
-        self.updatePreview()
-
-    def onRoundedBgSettingChanged(self):
-        """圆角背景设置变更"""
-        if self._loading_style:
-            return
-
-        self._save_current_edit()
-
-        self.updatePreview()
-
-    def _updateVisibleGroups(self):
-        """根据渲染模式显示/隐藏设置组"""
-        mode_text = self.renderModeCard.comboBox.currentText()
-        is_ass_mode = mode_text == SubtitleRenderModeEnum.ASS_STYLE.value
-
-        # ASS 样式设置组
-        self.assVerticalSpacingCard.setVisible(is_ass_mode)
-        self.assPrimaryGroup.setVisible(is_ass_mode)
-        self.assSecondaryGroup.setVisible(is_ass_mode)
-
-        # 圆角背景设置组
-        self.roundedBgGroup.setVisible(not is_ass_mode)
-
-    def _getStyleFileExtension(self) -> str:
-        """获取当前模式的样式文件扩展名 (统一使用 .json)"""
-        return ".json"
-
-    def _refreshStyleList(self):
-        """根据当前渲染模式刷新样式列表"""
-        is_rounded = self._getCurrentRenderMode() == SubtitleRenderModeEnum.ROUNDED_BG
-        target_mode = "rounded" if is_rounded else "ass"
-
-        # 阻断信号，避免 addItems/setCurrentText 重复触发 loadStyle
-        self.styleNameComboBox.comboBox.blockSignals(True)
-
-        # 清空现有列表
-        self.styleNameComboBox.comboBox.clear()
-
-        styles = list_styles(renderer=target_mode)
-        styles.sort(key=lambda style: (style.id != f"{target_mode}/default", style.source.value, style.short_id))
-        self._style_display_to_id = {self._style_label(style): style.id for style in styles}
-        self._style_id_to_display = {style.id: self._style_label(style) for style in styles}
-        style_labels = list(self._style_display_to_id.keys())
-
-        self.styleNameComboBox.comboBox.addItems(style_labels)
-
-        # 加载默认样式或配置中保存的样式
-        subtitle_style_name = normalize_style_id(cfg.get(cfg.subtitle_style_name), target_mode)
-        if subtitle_style_name in self._style_id_to_display:
-            self.styleNameComboBox.comboBox.setCurrentText(
-                self._style_id_to_display[subtitle_style_name]
-            )
+    @staticmethod
+    def _set_font(pill: PillSelect, name: str):
+        """选中字体；若样式里的字体不在候选中（如来自他机），临时补进列表再选中。"""
+        if name and name not in pill.items():
+            pill.setItems(pill.items() + [name], current=name)
         else:
-            self.styleNameComboBox.comboBox.setCurrentText(style_labels[0])
-            subtitle_style_name = self._style_display_to_id[style_labels[0]]
+            pill.setCurrentText(name)
 
-        # 恢复信号
-        self.styleNameComboBox.comboBox.blockSignals(False)
+    def _toggle(self, checked: bool) -> ToggleSwitch:
+        sw = ToggleSwitch(checked)
+        sw.toggled.connect(lambda _v: self._on_edit())
+        return sw
 
-        # 只调用一次 loadStyle
-        self.loadStyle(subtitle_style_name)
+    def _align_select(self) -> PillSelect:
+        pill = PillSelect()
+        pill.setItems([label for _v, label in _ALIGN_ITEMS])
+        pill.currentTextChanged.connect(lambda _t: self._on_edit())
+        return pill
 
-    def _getCurrentRenderMode(self) -> SubtitleRenderModeEnum:
-        """获取当前渲染模式"""
-        mode_text = self.renderModeCard.comboBox.currentText()
-        return SubtitleRenderModeEnum(mode_text)
+    @staticmethod
+    def _align_value(pill: PillSelect) -> str:
+        label = pill.currentText()
+        return next((v for v, lab in _ALIGN_ITEMS if lab == label), "center")
 
-    def _parseRgbaHex(self, hex_color: str) -> QColor:
-        """解析 #RRGGBBAA 格式的颜色"""
-        hex_color = hex_color.lstrip("#")
-        if len(hex_color) == 8:
-            r = int(hex_color[0:2], 16)
-            g = int(hex_color[2:4], 16)
-            b = int(hex_color[4:6], 16)
-            a = int(hex_color[6:8], 16)
-            return QColor(r, g, b, a)
-        elif len(hex_color) == 6:
-            return QColor(f"#{hex_color}")
-        return QColor(25, 25, 25, 200)  # 默认值
+    @staticmethod
+    def _set_align(pill: PillSelect, value: str):
+        label = next((lab for v, lab in _ALIGN_ITEMS if v == value), "居中")
+        pill.setCurrentText(label)
 
-    def onOrientationChanged(self):
-        """当预览方向改变时调用"""
-        orientation = self.orientationCard.comboBox.currentText()
-        preview_image = (
-            DEFAULT_BG_LANDSCAPE if orientation == "横屏" else DEFAULT_BG_PORTRAIT
+    def _color(self, color: QColor, title: str, alpha: bool = False) -> ColorValueControl:
+        ctl = ColorValueControl(color, title, alpha=alpha, width=124)
+        ctl.colorChanged.connect(lambda _c: self._on_edit())
+        return ctl
+
+    def _build_layout_group(self) -> InspectorGroup:
+        group = InspectorGroup(self.tr("字幕排布"))
+        self.contentSeg = FilterTabs(
+            [("bilingual", self.tr("双语")), ("source", self.tr("原文")), ("target", self.tr("译文"))]
         )
-        cfg.set(cfg.subtitle_preview_image, str(Path(preview_image["path"])))
-        self.updatePreview()
+        self.contentSeg.changed.connect(self._on_content_changed)
+        group.addRow(InspectorRow(AppIcon.LANGUAGE, self.tr("显示内容"), self.contentSeg))
 
-    def onAssSettingChanged(self):
-        """ASS 样式设置变更"""
-        if self._loading_style:
+        self.orderPill = PillSelect()
+        self.orderPill.setItems([self.tr("原文在上"), self.tr("译文在上")])
+        self.orderPill.currentTextChanged.connect(lambda _t: self._on_edit())
+        self.orderRow = InspectorRow(AppIcon.ALIGNMENT, self.tr("双语顺序"), self.orderPill)
+        group.addRow(self.orderRow)
+        return group
+
+    def _gap_row(self) -> InspectorRow:
+        """主副间距行（放在「位置」组）：ASS 映射上行对话 MarginV；圆角映射两气泡间距。"""
+        self.gapStepper = self._stepper(10, 0, 80, 1, suffix="px")
+        self.gapRow = InspectorRow(AppIcon.LAYOUT, self.tr("主副间距"), self.gapStepper)
+        return self.gapRow
+
+    def _rebuild_inspector(self, key: str):
+        self._mode_key = key
+        self._clear_inspector()
+        self._ass, self._rounded = {}, {}
+        groups: list[InspectorGroup] = [self._build_layout_group()]
+
+        if key == "rounded":
+            r = self._rounded
+            bg = InspectorGroup(self.tr("背景"))
+            r["bg_color"] = self._color(QColor(13, 227, 255, 230), self.tr("背景颜色"), alpha=True)
+            bg.addRow(InspectorRow(AppIcon.PALETTE, self.tr("背景颜色"), r["bg_color"]))
+            r["radius"] = self._stepper(14, 0, 60, 1, suffix="px")
+            bg.addRow(InspectorRow(AppIcon.ZOOM, self.tr("圆角半径"), r["radius"]))
+            groups.append(bg)
+
+            text = InspectorGroup(self.tr("文字"), self.tr("主副字幕"))
+            r["font"] = self._font_select()
+            text.addRow(InspectorRow(AppIcon.FONT, self.tr("字体"), r["font"]))
+            r["size"] = self._stepper(34, 8, 160, 1, suffix="px")
+            text.addRow(InspectorRow(AppIcon.FONT_SIZE, self.tr("字号"), r["size"]))
+            r["text_color"] = self._color(QColor("#ffffff"), self.tr("文字颜色"))
+            text.addRow(InspectorRow(AppIcon.PALETTE, self.tr("文字颜色"), r["text_color"]))
+            r["letter"] = self._stepper(0, 0, 40, 1, suffix="px")
+            text.addRow(InspectorRow(AppIcon.FONT, self.tr("字间距"), r["letter"]))
+            groups.append(text)
+
+            inner = InspectorGroup(self.tr("内边距"))
+            r["pad_h"] = self._stepper(28, 0, 120, 1, suffix="px")
+            inner.addRow(InspectorRow(AppIcon.LAYOUT, self.tr("水平内边距"), r["pad_h"]))
+            r["pad_v"] = self._stepper(14, 0, 80, 1, suffix="px")
+            inner.addRow(InspectorRow(AppIcon.LAYOUT, self.tr("垂直内边距"), r["pad_v"]))
+            groups.append(inner)
+
+            position = InspectorGroup(self.tr("位置"))
+            r["margin"] = self._stepper(60, 0, 400, 2, suffix="px")
+            position.addRow(InspectorRow(AppIcon.ALIGNMENT, self.tr("底部边距"), r["margin"]))
+            position.addRow(self._gap_row())
+            r["max_width"] = self._stepper(90, 30, 100, 2, suffix="%")
+            position.addRow(InspectorRow(AppIcon.LAYOUT, self.tr("最大宽度"), r["max_width"]))
+            r["align"] = self._align_select()
+            position.addRow(InspectorRow(AppIcon.ALIGNMENT, self.tr("对齐方式"), r["align"]))
+            groups.append(position)
+        else:
+            a = self._ass
+            primary = InspectorGroup(self.tr("主字幕"), self.tr("原文"))
+            a["font"] = self._font_select()
+            primary.addRow(InspectorRow(AppIcon.FONT, self.tr("字体"), a["font"]))
+            a["size"] = self._stepper(42, 8, 160, 1, suffix="px")
+            primary.addRow(InspectorRow(AppIcon.FONT_SIZE, self.tr("字号"), a["size"]))
+            a["color"] = self._color(QColor("#ffffff"), self.tr("文字颜色"))
+            primary.addRow(InspectorRow(AppIcon.PALETTE, self.tr("文字颜色"), a["color"]))
+            a["outline_color"] = self._color(QColor("#000000"), self.tr("描边颜色"))
+            primary.addRow(InspectorRow(AppIcon.BRUSH, self.tr("描边颜色"), a["outline_color"]))
+            a["outline"] = self._stepper(3, 0, 12, 0.5, decimals=1, suffix="px")
+            primary.addRow(InspectorRow(AppIcon.BRUSH, self.tr("描边宽度"), a["outline"]))
+            a["spacing"] = self._stepper(0.2, 0, 12, 0.2, decimals=1, suffix="px")
+            primary.addRow(InspectorRow(AppIcon.FONT, self.tr("字间距"), a["spacing"]))
+            a["bold"] = self._toggle(True)
+            primary.addRow(InspectorRow(AppIcon.FONT, self.tr("加粗"), a["bold"]))
+            groups.append(primary)
+
+            secondary = InspectorGroup(self.tr("副字幕"), self.tr("译文"))
+            a["sec_font"] = self._font_select()
+            secondary.addRow(InspectorRow(AppIcon.FONT, self.tr("字体"), a["sec_font"]))
+            a["sec_size"] = self._stepper(27, 8, 160, 1, suffix="px")
+            secondary.addRow(InspectorRow(AppIcon.FONT_SIZE, self.tr("字号"), a["sec_size"]))
+            a["sec_color"] = self._color(QColor("#ffe36b"), self.tr("文字颜色"))
+            secondary.addRow(InspectorRow(AppIcon.PALETTE, self.tr("文字颜色"), a["sec_color"]))
+            a["sec_outline_color"] = self._color(QColor("#000000"), self.tr("描边颜色"))
+            secondary.addRow(InspectorRow(AppIcon.BRUSH, self.tr("描边颜色"), a["sec_outline_color"]))
+            a["sec_outline"] = self._stepper(2, 0, 12, 0.5, decimals=1, suffix="px")
+            secondary.addRow(InspectorRow(AppIcon.BRUSH, self.tr("描边宽度"), a["sec_outline"]))
+            a["sec_spacing"] = self._stepper(0.8, 0, 12, 0.2, decimals=1, suffix="px")
+            secondary.addRow(InspectorRow(AppIcon.FONT, self.tr("字间距"), a["sec_spacing"]))
+            groups.append(secondary)
+
+            position = InspectorGroup(self.tr("位置"))
+            a["margin"] = self._stepper(42, 0, 400, 2, suffix="px")
+            position.addRow(InspectorRow(AppIcon.ALIGNMENT, self.tr("底部边距"), a["margin"]))
+            position.addRow(self._gap_row())
+            a["max_width"] = self._stepper(100, 30, 100, 2, suffix="%")
+            position.addRow(InspectorRow(AppIcon.LAYOUT, self.tr("最大宽度"), a["max_width"]))
+            a["align"] = self._align_select()
+            position.addRow(InspectorRow(AppIcon.ALIGNMENT, self.tr("对齐方式"), a["align"]))
+            groups.append(position)
+
+        for group in groups:
+            self.inspectorLayout.insertWidget(self.inspectorLayout.count() - 1, group)
+
+    # ---------------------------------------------------------------- 字幕排布
+
+    def _on_content_changed(self, _key: str):
+        bilingual = self.contentSeg.current() == "bilingual"
+        self.orderRow.setVisible(bilingual)
+        self.gapRow.setVisible(bilingual)  # 主副间距只在双语时有意义
+        self._on_edit()
+
+    def _current_layout(self) -> SubtitleLayoutEnum:
+        content = self.contentSeg.current()
+        if content == "source":
+            return SubtitleLayoutEnum.ONLY_ORIGINAL
+        if content == "target":
+            return SubtitleLayoutEnum.ONLY_TRANSLATE
+        if self.orderPill.currentText() == self.tr("译文在上"):
+            return SubtitleLayoutEnum.TRANSLATE_ON_TOP
+        return SubtitleLayoutEnum.ORIGINAL_ON_TOP
+
+    def _apply_layout_to_controls(self, layout: SubtitleLayoutEnum):
+        if layout == SubtitleLayoutEnum.ONLY_ORIGINAL:
+            self.contentSeg.setCurrent("source")
+        elif layout == SubtitleLayoutEnum.ONLY_TRANSLATE:
+            self.contentSeg.setCurrent("target")
+        elif layout == SubtitleLayoutEnum.TRANSLATE_ON_TOP:
+            self.contentSeg.setCurrent("bilingual")
+            self.orderPill.setCurrentText(self.tr("译文在上"))
+        else:
+            self.contentSeg.setCurrent("bilingual")
+            self.orderPill.setCurrentText(self.tr("原文在上"))
+        bilingual = self.contentSeg.current() == "bilingual"
+        self.orderRow.setVisible(bilingual)
+        self.gapRow.setVisible(bilingual)
+
+    # ---------------------------------------------------------------- 样式库
+
+    def _clear_dock_cards(self):
+        """清空横向轨道（setParent(None) 立即脱离，避免 deleteLater 异步重影）。"""
+        self._cards = []
+        while self.trackLayout.count() > 1:  # 保留末尾 stretch
+            item = self.trackLayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _refresh_style_list(self):
+        """重建样式卡（仅在新增/复制/重命名/删除/切换模式时调用，点选切换不重建）。"""
+        self._clear_dock_cards()
+
+        key = self._mode_key
+        styles = list_styles(renderer=key)
+        styles.sort(key=lambda s: (s.id != f"{key}/default", s.source.value, s.short_id))
+        self.countChip.setText(self.tr("共 {} 套").format(len(styles)))
+
+        active_id = normalize_style_id(cfg.subtitle_style_name.value, key)
+        active_preset = next((s for s in styles if s.id == active_id), None)
+        if active_preset is None:
+            active_preset = styles[0] if styles else None
+        active_norm = active_preset.id if active_preset is not None else ""
+
+        active_card = None
+        for idx, preset in enumerate(styles):
+            card = self._make_card(preset)
+            card.setActive(preset.id == active_norm)
+            if preset.id == active_norm:
+                active_card = card
+            self.trackLayout.insertWidget(idx, card)
+            self._cards.append(card)
+
+        # 让坞内容宽度等于所有卡片之和，横向才能真正滚动（否则 setWidgetResizable
+        # 会把内容压成视口宽度，超出的卡片被裁还滚不到）。
+        margins = self.trackLayout.contentsMargins()
+        spacing = self.trackLayout.spacing()
+        content_w = (
+            margins.left() + margins.right()
+            + len(self._cards) * _CARD_WIDTH
+            + max(0, len(self._cards) - 1) * spacing
+        )
+        self.trackBody.setMinimumWidth(content_w)
+
+        if active_preset is not None:
+            cfg.set(cfg.subtitle_style_name, active_preset.id)
+            self._load_into_controls(active_preset)
+            self.update_preview()
+        self._scroll_card_into_view(active_card)
+
+    def _make_card(self, preset: SubtitleStylePreset) -> StyleCard:
+        icon = AppIcon.PALETTE if preset.renderer == SubtitleRenderer.ROUNDED else AppIcon.BRUSH
+        card = StyleCard(
+            preset.id,
+            preset.name,
+            self._swatches(preset),
+            preset.editable,
+            icon,
+        )
+        card.setFixedWidth(_CARD_WIDTH)  # 统一宽度，可容纳选中态的三个文字动作按钮
+        card.clicked.connect(self._select_style)
+        card.duplicateRequested.connect(self._duplicate_style)
+        card.renameRequested.connect(self._rename_style)
+        card.deleteRequested.connect(self._delete_style)
+        return card
+
+    def _swatches(self, preset: SubtitleStylePreset) -> list[str]:
+        style = preset.style
+        if isinstance(style, RoundedSubtitleStyle):
+            return [style.text_color, _rgba_hex_to_qcolor(style.bg_color).name(QColor.HexRgb)]
+        if isinstance(style, AssSubtitleStyle):
+            colors = [style.primary_color, style.outline_color]
+            if style.secondary and style.secondary.color not in colors:
+                colors.append(style.secondary.color)
+            return colors
+        return []
+
+    def _select_style(self, style_id: str):
+        """点选某个样式 → 仅高亮 + 载入参数 + 刷新预览（不重建卡片，避免重排闪动）。"""
+        key = self._mode_key
+        if normalize_style_id(style_id, key) == normalize_style_id(cfg.subtitle_style_name.value, key):
+            return  # 已是当前样式
+        preset = load_style(style_id, renderer=key)
+        if preset is None:
+            return
+        cfg.set(cfg.subtitle_style_name, preset.id)
+        active_card = None
+        for card in self._cards:
+            card.setActive(card.style_id == preset.id)
+            if card.style_id == preset.id:
+                active_card = card
+        self._load_into_controls(preset)
+        self.update_preview()
+        self._scroll_card_into_view(active_card)
+
+    def _scroll_card_into_view(self, card: Optional[StyleCard]):
+        """把指定卡片横向滚动到可见处（延后到布局完成，确保滚动范围已就绪）。"""
+        if card is None:
             return
 
-        self.updatePreview()
-        current_style = self.styleNameComboBox.comboBox.currentText()
-        if current_style:
-            self._save_current_edit()
+        def _do(c=card):
+            if c in self._cards:
+                self.trackScroll.ensureWidgetVisible(c, 24, 0)
 
-    def selectPreviewImage(self):
-        """选择预览背景图片"""
-        file_path, _ = QFileDialog.getOpenFileName(
+        from PyQt5.QtCore import QTimer
+
+        QTimer.singleShot(0, _do)
+
+    # ---------------------------------------------------------------- 控件 ↔ 样式
+
+    def _load_into_controls(self, preset: SubtitleStylePreset):
+        self._loading = True
+        self._apply_layout_to_controls(cfg.subtitle_layout.value)
+        if isinstance(preset.style, RoundedSubtitleStyle):
+            s, r = preset.style, self._rounded
+            self._set_font(r["font"], s.font_name)
+            r["size"].setValue(s.font_size)
+            r["text_color"].setColor(QColor(s.text_color))
+            r["bg_color"].setColor(_rgba_hex_to_qcolor(s.bg_color))
+            r["radius"].setValue(s.corner_radius)
+            self.gapStepper.setValue(s.line_spacing)
+            r["letter"].setValue(s.letter_spacing)
+            r["pad_h"].setValue(s.padding_h)
+            r["pad_v"].setValue(s.padding_v)
+            r["margin"].setValue(s.margin_bottom)
+            r["max_width"].setValue(s.max_width)
+            self._set_align(r["align"], s.align)
+        elif isinstance(preset.style, AssSubtitleStyle):
+            s, a = preset.style, self._ass
+            self._set_font(a["font"], s.font_name)
+            a["size"].setValue(s.font_size)
+            a["color"].setColor(QColor(s.primary_color))
+            a["outline_color"].setColor(QColor(s.outline_color))
+            a["outline"].setValue(s.outline_width)
+            a["spacing"].setValue(s.spacing)
+            a["bold"].setChecked(s.bold)
+            a["margin"].setValue(s.margin_bottom)
+            a["max_width"].setValue(s.max_width)
+            self._set_align(a["align"], s.align)
+            self.gapStepper.setValue(s.line_gap)
+            sec = s.secondary
+            if sec:
+                self._set_font(a["sec_font"], sec.font_name)
+                a["sec_size"].setValue(sec.font_size)
+                a["sec_color"].setColor(QColor(sec.color))
+                a["sec_outline_color"].setColor(QColor(sec.outline_color))
+                a["sec_outline"].setValue(sec.outline_width)
+                a["sec_spacing"].setValue(sec.spacing)
+            else:
+                self._set_font(a["sec_font"], s.font_name)
+        self._loading = False
+
+    def _preset_from_controls(self, style_id: str, name: Optional[str] = None) -> SubtitleStylePreset:
+        key = self._mode_key
+        if key == "rounded":
+            r = self._rounded
+            style = RoundedSubtitleStyle(
+                font_name=r["font"].currentText(),
+                font_size=int(r["size"].value()),
+                text_color=r["text_color"].color().name(QColor.HexRgb),
+                bg_color=_qcolor_to_rgba_hex(r["bg_color"].color()),
+                corner_radius=int(r["radius"].value()),
+                padding_h=int(r["pad_h"].value()),
+                padding_v=int(r["pad_v"].value()),
+                margin_bottom=int(r["margin"].value()),
+                line_spacing=int(self.gapStepper.value()),
+                letter_spacing=int(r["letter"].value()),
+                max_width=int(r["max_width"].value()),
+                align=self._align_value(r["align"]),
+            )
+            renderer = SubtitleRenderer.ROUNDED
+        else:
+            a = self._ass
+            style = AssSubtitleStyle(
+                font_name=a["font"].currentText(),
+                font_size=int(a["size"].value()),
+                primary_color=a["color"].color().name(QColor.HexRgb),
+                outline_color=a["outline_color"].color().name(QColor.HexRgb),
+                outline_width=a["outline"].value(),
+                bold=a["bold"].isChecked(),
+                spacing=a["spacing"].value(),
+                margin_bottom=int(a["margin"].value()),
+                max_width=int(a["max_width"].value()),
+                align=self._align_value(a["align"]),
+                line_gap=int(self.gapStepper.value()),
+                secondary=AssSecondaryStyle(
+                    font_name=a["sec_font"].currentText(),
+                    font_size=int(a["sec_size"].value()),
+                    color=a["sec_color"].color().name(QColor.HexRgb),
+                    outline_color=a["sec_outline_color"].color().name(QColor.HexRgb),
+                    outline_width=a["sec_outline"].value(),
+                    spacing=a["sec_spacing"].value(),
+                ),
+            )
+            renderer = SubtitleRenderer.ASS
+        return SubtitleStylePreset(
+            id=style_id,
+            name=name or style_id.split("/", 1)[-1],
+            renderer=renderer,
+            source=StyleSource.USER,
+            style=style,
+        )
+
+    def _new_user_id(self, name: str) -> str:
+        """从显示名生成唯一的用户样式 id（中文名会被 slug 化，塌成 default 时回退）。"""
+        key = self._mode_key
+        base = normalize_style_id(name, key)
+        if base == f"{key}/default":
+            base = f"{key}/style"
+        candidate, index = base, 2
+        while load_style(candidate, renderer=key) is not None:
+            candidate = f"{base}-{index}"
+            index += 1
+        return candidate
+
+    def _on_edit(self):
+        """任一参数变化：刷新预览 + 自动保存（编辑内置样式时自动 fork）。"""
+        if self._loading:
+            return
+        cfg.set(cfg.subtitle_layout, self._current_layout())
+        self.update_preview()
+        self._auto_save()
+
+    def _auto_save(self):
+        current_id = normalize_style_id(cfg.subtitle_style_name.value, self._mode_key)
+        preset = load_style(current_id, renderer=self._mode_key)
+        if preset is not None and preset.source == StyleSource.BUILTIN:
+            # 内置只读：fork 成用户样式后再保存到那里（带上"· 自定义"的可读名）
+            new_id = self._unique_user_id(preset)
+            name = f"{preset.name} · {self.tr('自定义')}"
+            save_user_style(self._preset_from_controls(new_id, name))
+            cfg.set(cfg.subtitle_style_name, new_id)
+            self._refresh_style_list()
+            return
+        # 已是用户样式：保留其显示名，只更新参数
+        keep_name = preset.name if preset is not None else None
+        save_user_style(self._preset_from_controls(current_id, keep_name))
+        # 颜色可能变化，刷新当前卡的色块
+        for card in self._cards:
+            if card.style_id == current_id:
+                updated = load_style(current_id, renderer=self._mode_key)
+                if updated:
+                    card.setSwatches(self._swatches(updated))
+                break
+
+    def _unique_user_id(self, preset: SubtitleStylePreset) -> str:
+        renderer = preset.renderer.value
+        base = f"{renderer}/{preset.short_id}-custom"
+        candidate, index = base, 2
+        while load_style(candidate, renderer=renderer) is not None:
+            candidate = f"{base}-{index}"
+            index += 1
+        return candidate
+
+    # ---------------------------------------------------------------- 库动作
+
+    def _on_new_style(self):
+        name = self._ask_name(self.tr("新建样式"))
+        if not name:
+            return
+        style_id = self._new_user_id(name)
+        save_user_style(self._preset_from_controls(style_id, name))
+        cfg.set(cfg.subtitle_style_name, style_id)
+        self._refresh_style_list()
+        self._toast(self.tr("已创建样式「{}」").format(name))
+
+    def _duplicate_style(self, style_id: str):
+        preset = load_style(style_id, renderer=self._mode_key)
+        if preset is None:
+            return
+        new_id = self._unique_user_id(preset)
+        copy = SubtitleStylePreset(
+            id=new_id,
+            name=f"{preset.name} {self.tr('副本')}",
+            renderer=preset.renderer,
+            source=StyleSource.USER,
+            style=preset.style,
+        )
+        save_user_style(copy)
+        cfg.set(cfg.subtitle_style_name, new_id)
+        self._refresh_style_list()
+        self._toast(self.tr("已复制为「{}」").format(copy.name))
+
+    def _rename_style(self, style_id: str):
+        # 只改显示名，文件 id 保持不变：避免中文名 slug 化撞名、也省去删旧文件。
+        preset = load_style(style_id, renderer=self._mode_key)
+        if preset is None or not preset.editable:
+            return
+        name = self._ask_name(self.tr("重命名样式"), preset.name)
+        if not name or name == preset.name:
+            return
+        renamed = SubtitleStylePreset(
+            id=style_id, name=name, renderer=preset.renderer,
+            source=StyleSource.USER, style=preset.style,
+        )
+        save_user_style(renamed)
+        self._refresh_style_list()
+        self._toast(self.tr("已重命名为「{}」").format(name))
+
+    def _delete_style(self, style_id: str):
+        preset = load_style(style_id, renderer=self._mode_key)
+        if preset is None or not preset.editable:
+            return
+        dialog = ConfirmDialog(
+            self.tr("删除样式"),
+            self.tr("确定删除样式「{}」吗？此操作不可恢复。").format(preset.name),
             self,
-            self.tr("选择背景图片"),
-            "",
-            self.tr("图片文件") + " (*.png *.jpg *.jpeg)",
         )
-        if file_path:
-            cfg.set(cfg.subtitle_preview_image, file_path)
-            self.updatePreview()
+        if not dialog.exec():
+            return
+        delete_user_style(style_id)
+        cfg.set(cfg.subtitle_style_name, f"{self._mode_key}/default")
+        self._refresh_style_list()
+        self._toast(self.tr("样式已删除"))
 
-    def generateAssStyles(self) -> str:
-        """生成 ASS 样式字符串（固定720P分辨率）"""
-        style_format = "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding"
+    # ---------------------------------------------------------------- 预览
 
-        # 垂直间距
-        vertical_spacing = self.assVerticalSpacingCard.spinBox.value()
+    def _toggle_orientation(self):
+        self._orientation = "竖屏" if self._orientation == "横屏" else "横屏"
+        self.orientationButton.setText(self.tr("{}预览").format(self._orientation))
+        # 切方向时回退到内置背景（用户自定义背景按固定尺寸渲染不区分横竖）
+        cfg.set(cfg.subtitle_preview_image, "")
+        self.update_preview()
 
-        # 主字幕样式
-        primary_font = self.assPrimaryFontCard.comboBox.currentText()
-        primary_size = self.assPrimarySizeCard.spinBox.value()
-
-        # 颜色转换为 ASS 格式 (AABBGGRR)
-        primary_color_hex = self.assPrimaryColorCard.colorPicker.color.name()
-        primary_outline_hex = self.assPrimaryOutlineColorCard.colorPicker.color.name()
-        primary_color = f"&H00{primary_color_hex[5:7]}{primary_color_hex[3:5]}{primary_color_hex[1:3]}"
-        primary_outline_color = f"&H00{primary_outline_hex[5:7]}{primary_outline_hex[3:5]}{primary_outline_hex[1:3]}"
-        primary_spacing = self.assPrimarySpacingCard.spinBox.value()
-        primary_outline_size = self.assPrimaryOutlineSizeCard.spinBox.value()
-
-        # 副字幕样式
-        secondary_font = self.assSecondaryFontCard.comboBox.currentText()
-        secondary_size = self.assSecondarySizeCard.spinBox.value()
-
-        secondary_color_hex = self.assSecondaryColorCard.colorPicker.color.name()
-        secondary_outline_hex = (
-            self.assSecondaryOutlineColorCard.colorPicker.color.name()
+    def _pick_background(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self.tr("选择背景图片"), "", self.tr("图片文件") + " (*.png *.jpg *.jpeg)"
         )
-        secondary_color = f"&H00{secondary_color_hex[5:7]}{secondary_color_hex[3:5]}{secondary_color_hex[1:3]}"
-        secondary_outline_color = f"&H00{secondary_outline_hex[5:7]}{secondary_outline_hex[3:5]}{secondary_outline_hex[1:3]}"
-        secondary_spacing = self.assSecondarySpacingCard.spinBox.value()
-        secondary_outline_size = self.assSecondaryOutlineSizeCard.spinBox.value()
+        if path:
+            cfg.set(cfg.subtitle_preview_image, path)
+            self.update_preview()
 
-        # 生成样式字符串
-        primary_style = f"Style: Default,{primary_font},{primary_size},{primary_color},&H000000FF,{primary_outline_color},&H00000000,-1,0,0,0,100,100,{primary_spacing},0,1,{primary_outline_size},0,2,10,10,{vertical_spacing},1,\\q1"
-        secondary_style = f"Style: Secondary,{secondary_font},{secondary_size},{secondary_color},&H000000FF,{secondary_outline_color},&H00000000,-1,0,0,0,100,100,{secondary_spacing},0,1,{secondary_outline_size},0,2,10,10,{vertical_spacing},1,\\q1"
-
-        return f"[V4+ Styles]\n{style_format}\n{primary_style}\n{secondary_style}"
-
-    def _apply_preview_text_preset(self, update: bool = True):
-        """Switch between preset preview text and editable custom text."""
-        is_custom = self.previewTextCard.comboBox.currentText() == CUSTOM_PREVIEW_TEXT
-        self.previewOriginalTextCard.setVisible(is_custom)
-        self.previewTranslationTextCard.setVisible(is_custom)
-        if is_custom and not (
-            self.previewOriginalTextCard.text().strip()
-            or self.previewTranslationTextCard.text().strip()
-        ):
-            original, translation = PERVIEW_TEXTS["中文本"]
-            self.previewOriginalTextCard.setText(original)
-            self.previewTranslationTextCard.setText(translation)
-        if update:
-            self.updatePreview()
-
-    def _preview_texts(self) -> tuple[str, str]:
-        if self.previewTextCard.comboBox.currentText() != CUSTOM_PREVIEW_TEXT:
-            return PERVIEW_TEXTS.get(
-                self.previewTextCard.comboBox.currentText(),
-                PERVIEW_TEXTS["中文本"],
-            )
-
-        fallback_original, fallback_translation = PERVIEW_TEXTS.get(
-            self.previewTextCard.comboBox.currentText(),
-            PERVIEW_TEXTS["中文本"],
+    def _edit_preview_text(self):
+        """编辑预览示例文字（原文 / 译文），持久化后立即刷新预览。"""
+        dialog = PreviewTextDialog(
+            cfg.subtitle_preview_source.value, cfg.subtitle_preview_target.value, self
         )
-        original = self.previewOriginalTextCard.text().strip() or fallback_original
-        translation = self.previewTranslationTextCard.text().strip() or fallback_translation
-        return original, translation
+        if dialog.exec():
+            cfg.set(cfg.subtitle_preview_source, dialog.sourceEdit.text().strip() or PREVIEW_TEXT[0])
+            cfg.set(cfg.subtitle_preview_target, dialog.targetEdit.text().strip() or PREVIEW_TEXT[1])
+            self.update_preview()
 
-    def updatePreview(self):
-        """更新预览图片"""
-        # 获取预览文本
-        main_text, sub_text = self._preview_texts()
-
-        # 字幕布局
-        layout = self.layoutCard.comboBox.currentText()
-        if layout == "译文在上":
-            main_text, sub_text = sub_text, main_text
-        elif layout == "原文在上":
-            main_text, sub_text = main_text, sub_text
-        elif layout == "仅译文":
-            main_text, sub_text = sub_text, None
-        elif layout == "仅原文":
-            main_text, sub_text = main_text, None
-
-        # 获取预览方向和背景
-        orientation = self.orientationCard.comboBox.currentText()
-        default_preview = (
-            DEFAULT_BG_LANDSCAPE if orientation == "横屏" else DEFAULT_BG_PORTRAIT
-        )
-
-        # 获取背景图片路径
-        user_bg_path = cfg.get(cfg.subtitle_preview_image)
-        if user_bg_path and Path(user_bg_path).exists():
-            path = user_bg_path
+    def _preview_pair(self) -> Tuple[str, Optional[str]]:
+        original = cfg.subtitle_preview_source.value or PREVIEW_TEXT[0]
+        translation = cfg.subtitle_preview_target.value or PREVIEW_TEXT[1]
+        layout = self._current_layout()
+        if layout == SubtitleLayoutEnum.ONLY_ORIGINAL:
+            main, sub = original, None
+        elif layout == SubtitleLayoutEnum.ONLY_TRANSLATE:
+            main, sub = translation, None
+        elif layout == SubtitleLayoutEnum.TRANSLATE_ON_TOP:
+            main, sub = translation, original
         else:
-            path = default_preview["path"]
+            main, sub = original, translation
+        return main, sub
 
-        # 根据渲染模式创建不同的预览线程（不传入尺寸，由渲染层自动从图片获取）
-        render_mode = self._getCurrentRenderMode()
+    def _background_path(self) -> str:
+        user_bg = cfg.subtitle_preview_image.value
+        if user_bg and Path(user_bg).exists():
+            return user_bg
+        return str(DEFAULT_BG_LANDSCAPE if self._orientation == "横屏" else DEFAULT_BG_PORTRAIT)
 
-        if render_mode == SubtitleRenderModeEnum.ROUNDED_BG:
-            # 圆角背景模式（样式720P基准，由渲染层自动缩放）
-            bg_color = self.roundedBgColorCard.colorPicker.color
-            bg_color_hex = f"#{bg_color.red():02x}{bg_color.green():02x}{bg_color.blue():02x}{bg_color.alpha():02x}"
-
+    def update_preview(self):
+        if not (self._ass or self._rounded):
+            return
+        main, sub = self._preview_pair()
+        bg = self._background_path()
+        if self._mode_key == "rounded":
+            r = self._rounded
             style = RoundedBgStyle(
-                font_name=self.roundedFontCard.comboBox.currentText(),
-                font_size=self.roundedFontSizeCard.spinBox.value(),
-                bg_color=bg_color_hex,
-                text_color=self.roundedTextColorCard.colorPicker.color.name(),
-                corner_radius=self.roundedCornerRadiusCard.spinBox.value(),
-                padding_h=self.roundedPaddingHCard.spinBox.value(),
-                padding_v=self.roundedPaddingVCard.spinBox.value(),
-                margin_bottom=self.roundedMarginBottomCard.spinBox.value(),
-                line_spacing=self.roundedLineSpacingCard.spinBox.value(),
-                letter_spacing=self.roundedLetterSpacingCard.spinBox.value(),
+                font_name=r["font"].currentText(),
+                font_size=int(r["size"].value()),
+                bg_color=_qcolor_to_rgba_hex(r["bg_color"].color()),
+                text_color=r["text_color"].color().name(QColor.HexRgb),
+                corner_radius=int(r["radius"].value()),
+                padding_h=int(r["pad_h"].value()),
+                padding_v=int(r["pad_v"].value()),
+                margin_bottom=int(r["margin"].value()),
+                line_spacing=int(self.gapStepper.value()),
+                letter_spacing=int(r["letter"].value()),
+                max_width=int(r["max_width"].value()),
+                align=self._align_value(r["align"]),
             )
-
-            preview_thread = RoundedBgPreviewThread(
-                preview_text=(main_text, sub_text),
-                style=style,
-                bg_image_path=str(path),
-            )
+            thread: QThread = RoundedBgPreviewThread((main, sub), style, bg)
         else:
-            # ASS 样式模式（样式720P基准，由渲染层自动缩放）
-            style_str = self.generateAssStyles()
-            preview_thread = AssPreviewThread(
-                preview_text=(main_text, sub_text),
-                style_str=style_str,
-                bg_image_path=str(path),
+            # 预览与合成共用同一份样式字符串（AssSubtitleStyle.to_ass_string），避免漂移
+            ass_style = self._preset_from_controls("ass/preview", "preview").style
+            thread = AssPreviewThread(
+                (main, sub), ass_style.to_ass_string(), bg, line_gap=int(self.gapStepper.value())
             )
 
         self._preview_generation += 1
         generation = self._preview_generation
-        preview_thread.previewReady.connect(
-            lambda preview_path, gen=generation: self.onPreviewReady(preview_path)
+        thread.previewReady.connect(
+            lambda path, gen=generation: self._on_preview_ready(path)
             if gen == self._preview_generation
             else None
         )
-        preview_thread.finished.connect(
-            lambda thread=preview_thread: self._remove_preview_thread(thread)
+        thread.finished.connect(lambda t=thread: self._preview_threads.remove(t) if t in self._preview_threads else None)
+        self._preview_threads.append(thread)
+        thread.start()
+
+    def _on_preview_ready(self, path: str):
+        self.previewImage.setImage(path)
+        img = getattr(self.previewImage, "image", None)
+        self._preview_native = (
+            (img.width(), img.height()) if img is not None and not img.isNull() else None
         )
-        self.preview_thread = preview_thread
-        self._preview_threads.append(preview_thread)
-        preview_thread.start()
+        self._fit_preview()
 
-    def _remove_preview_thread(self, thread: QThread) -> None:
-        if thread in self._preview_threads:
-            self._preview_threads.remove(thread)
+    def _fit_preview(self):
+        """等比缩放预览图尽量铺满舞台（仅留薄边），同时适配宽屏/矮屏/全屏。
 
-    def onPreviewReady(self, preview_path):
-        """预览图片生成完成的回调"""
-        self.previewImage.setImage(preview_path)
-        self.updatePreviewImage()
+        取「按宽适配」与「按高适配」的较小比例，确保任一维度都不溢出；上限为原生
+        分辨率（默认背景 1280×720），避免放大发糊。宽而矮的屏由高度约束自动收窄、
+        横向居中——所以铺得满又不裁切。
+        """
+        native = getattr(self, "_preview_native", None)
+        if not native:
+            return
+        nw, nh = native
+        if nw <= 0 or nh <= 0:
+            return
+        margin = 20  # 对应舞台 stage_layout 上下/左右各 10 的薄边
+        avail_w = self.stage.width() - margin
+        avail_h = self.stage.height() - margin
+        if avail_w <= 0 or avail_h <= 0:
+            return
+        scale = min(avail_w / nw, avail_h / nh, 1.0)
+        self.previewImage.scaledToWidth(max(1, int(nw * scale)))
+        if self.previewImage.height() > avail_h:
+            self.previewImage.scaledToHeight(avail_h)
+        self.previewImage.setBorderRadius(12, 12, 12, 12)
 
-    def updatePreviewImage(self):
-        """更新预览图片"""
-        height = int(self.previewTopWidget.height() * 0.98)
-        width = int(self.previewTopWidget.width() * 0.98)
-        self.previewImage.scaledToWidth(width)
-        if self.previewImage.height() > height:
-            self.previewImage.scaledToHeight(height)
-        self.previewImage.setBorderRadius(8, 8, 8, 8)
+    # ---------------------------------------------------------------- 杂项
+
+    def _ask_name(self, title: str, initial: str = "") -> str:
+        dialog = StyleNameDialog(title, initial, self)
+        if dialog.exec():
+            return dialog.nameLineEdit.text().strip()
+        return ""
+
+    def _toast(self, text: str):
+        InfoBar.success(
+            "", text, orient=Qt.Horizontal, isClosable=True,  # type: ignore[arg-type]
+            position=InfoBarPosition.TOP, duration=INFOBAR_DURATION_SUCCESS, parent=self,
+        )
+
+    def _warn(self, text: str):
+        InfoBar.warning(
+            "", text, orient=Qt.Horizontal, isClosable=True,  # type: ignore[arg-type]
+            position=InfoBarPosition.TOP, duration=INFOBAR_DURATION_WARNING, parent=self,
+        )
+
+    def _apply_page_style(self):
+        palette = app_palette()
+        self.setStyleSheet(
+            f"QWidget#SubtitleStyleInterface {{ background: {palette.bg}; }}"
+        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.updatePreviewImage()
+        self._fit_preview()
 
     def showEvent(self, event):
-        """窗口显示事件"""
         super().showEvent(event)
-        self.updatePreviewImage()
+        self._fit_preview()
+        # 首次显示时把当前样式滚到可见处（构建时页面还没尺寸，滚动不生效）
+        active = next((c for c in self._cards if c.isActive()), None)
+        self._scroll_card_into_view(active)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                if url.toLocalFile().lower().endswith((".png", ".jpg", ".jpeg")):
+                    event.accept()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith((".png", ".jpg", ".jpeg")):
+                cfg.set(cfg.subtitle_preview_image, path)
+                self.update_preview()
+                self._toast(self.tr("已设置预览背景：") + Path(path).name)
+                break
 
     def closeEvent(self, event):
         for thread in list(self._preview_threads):
@@ -1092,295 +1081,16 @@ class SubtitleStyleInterface(QWidget):
         self._preview_threads.clear()
         super().closeEvent(event)
 
-    def _current_renderer_key(self) -> str:
-        mode = self._getCurrentRenderMode()
-        return "rounded" if mode == SubtitleRenderModeEnum.ROUNDED_BG else "ass"
-
-    def _style_label(self, preset: SubtitleStylePreset) -> str:
-        suffix = self.tr("内置") if preset.source == StyleSource.BUILTIN else self.tr("我的")
-        return f"{preset.name} · {suffix}"
-
-    def _style_id_from_combo_text(self, text: str) -> str:
-        return self._style_display_to_id.get(text, text)
-
-    def _is_user_style(self, style_name: str) -> bool:
-        preset = load_style(
-            self._style_id_from_combo_text(style_name),
-            renderer=self._current_renderer_key(),
-        )
-        return bool(preset and preset.source == StyleSource.USER)
-
-    def loadStyle(self, style_name):
-        """加载指定样式（根据当前渲染模式加载对应格式）"""
-        style_id = self._style_id_from_combo_text(style_name)
-        preset = load_style(style_id, renderer=self._current_renderer_key())
-        if preset is None:
-            return
-
-        self._loading_style = True
-
-        mode = self._getCurrentRenderMode()
-        if mode == SubtitleRenderModeEnum.ROUNDED_BG:
-            self._loadRoundedBgStyle(preset)
-        else:
-            self._loadAssStyle(preset)
-
-        cfg.set(cfg.subtitle_style_name, preset.id)
-        self._loading_style = False
-        self._sync_style_actions()
-        self.updatePreview()
-
-    def _loadAssStyle(self, preset: SubtitleStylePreset):
-        """加载 ASS 样式 (.json)"""
-        if not isinstance(preset.style, AssSubtitleStyle):
-            return
-        style = preset.style
-
-        # Primary style
-        self.assPrimaryFontCard.setCurrentText(style.font_name)
-        self.assPrimarySizeCard.spinBox.setValue(style.font_size)
-        self.assVerticalSpacingCard.spinBox.setValue(style.margin_bottom)
-        self.assPrimaryColorCard.setColor(QColor(style.primary_color))
-        self.assPrimaryOutlineColorCard.setColor(QColor(style.outline_color))
-        self.assPrimarySpacingCard.spinBox.setValue(style.spacing)
-        self.assPrimaryOutlineSizeCard.spinBox.setValue(style.outline_width)
-
-        # Secondary style
-        sec = style.secondary
-        if sec:
-            self.assSecondaryFontCard.setCurrentText(sec.font_name)
-            self.assSecondarySizeCard.spinBox.setValue(sec.font_size)
-            self.assSecondaryColorCard.setColor(QColor(sec.color))
-            self.assSecondaryOutlineColorCard.setColor(QColor(sec.outline_color))
-            self.assSecondarySpacingCard.spinBox.setValue(sec.spacing)
-            self.assSecondaryOutlineSizeCard.spinBox.setValue(sec.outline_width)
-
-    def _loadRoundedBgStyle(self, preset: SubtitleStylePreset):
-        """加载圆角背景样式 (.json)"""
-        if not isinstance(preset.style, RoundedSubtitleStyle):
-            return
-        data = preset.style
-        self.roundedFontCard.setCurrentText(data.font_name)
-        self.roundedFontSizeCard.spinBox.setValue(data.font_size)
-        self.roundedTextColorCard.setColor(QColor(data.text_color))
-        self.roundedBgColorCard.setColor(self._parseRgbaHex(data.bg_color))
-        self.roundedCornerRadiusCard.spinBox.setValue(data.corner_radius)
-        self.roundedPaddingHCard.spinBox.setValue(data.padding_h)
-        self.roundedPaddingVCard.spinBox.setValue(data.padding_v)
-        self.roundedMarginBottomCard.spinBox.setValue(data.margin_bottom)
-        self.roundedLineSpacingCard.spinBox.setValue(data.line_spacing)
-        self.roundedLetterSpacingCard.spinBox.setValue(data.letter_spacing)
-
-    def createNewStyle(self):
-        """创建新样式"""
-        dialog = StyleNameDialog(self)
-        if dialog.exec():
-            style_name = dialog.nameLineEdit.text().strip()
-            if not style_name:
-                return
-
-            style_id = normalize_style_id(style_name, self._current_renderer_key())
-            if load_style(style_id, renderer=self._current_renderer_key()) is not None:
-                InfoBar.warning(
-                    title=self.tr("警告"),
-                    content=self.tr("样式 ") + style_name + self.tr(" 已存在"),
-                    orient=Qt.Horizontal,  # type: ignore
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=INFOBAR_DURATION_WARNING,
-                    parent=self,
-                )
-                return
-
-            # 保存新样式
-            self.saveStyle(style_id)
-
-            # 更新样式列表并选中新样式
-            self._refreshStyleList()
-            self.styleNameComboBox.comboBox.setCurrentText(
-                self._style_id_to_display.get(style_id, style_id)
-            )
-
-            InfoBar.success(
-                title=self.tr("成功"),
-                content=self.tr("已创建新样式 ") + style_name,
-                orient=Qt.Horizontal,  # type: ignore
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=INFOBAR_DURATION_SUCCESS,
-                parent=self,
-            )
-
-    def deleteCurrentStyle(self):
-        style_text = self.styleNameComboBox.comboBox.currentText()
-        style_id = self._style_id_from_combo_text(style_text)
-        if not self._is_user_style(style_id):
-            InfoBar.warning(
-                title=self.tr("无法删除"),
-                content=self.tr("内置样式不能删除，可以基于它新建样式。"),
-                orient=Qt.Horizontal,  # type: ignore
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=INFOBAR_DURATION_WARNING,
-                parent=self,
-            )
-            return
-        delete_user_style(style_id)
-        self._refreshStyleList()
-        InfoBar.success(
-            title=self.tr("已删除"),
-            content=self.tr("样式已删除"),
-            orient=Qt.Horizontal,  # type: ignore
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=INFOBAR_DURATION_SUCCESS,
-            parent=self,
-        )
-
-    def saveStyle(self, style_name):
-        """保存样式（根据当前渲染模式保存对应格式）"""
-        renderer = self._current_renderer_key()
-        style_id = normalize_style_id(self._style_id_from_combo_text(style_name), renderer)
-        if renderer == SubtitleRenderer.ROUNDED.value:
-            preset = self._rounded_preset_from_ui(style_id)
-        else:
-            preset = self._ass_preset_from_ui(style_id)
-        save_user_style(preset)
-        self._sync_style_actions()
-
-    def _save_current_edit(self):
-        """Persist the current controls.
-
-        Built-in presets are read-only. The first edit automatically forks the
-        preset into a user style, switches the combo to that new style, and then
-        saves all subsequent edits there. This keeps preview, synthesis, and
-        next-launch behavior aligned with what the user sees.
-        """
-        current_text = self.styleNameComboBox.comboBox.currentText()
-        if not current_text:
-            return
-        style_id = self._style_id_from_combo_text(current_text)
-        preset = load_style(style_id, renderer=self._current_renderer_key())
-        if preset is not None and preset.source == StyleSource.BUILTIN:
-            style_id = self._unique_user_style_id(preset)
-            self.saveStyle(style_id)
-            self._refreshStyleList()
-            self.styleNameComboBox.comboBox.setCurrentText(
-                self._style_id_to_display.get(style_id, style_id)
-            )
-            cfg.set(cfg.subtitle_style_name, style_id)
-            return
-        self.saveStyle(style_id)
-        cfg.set(cfg.subtitle_style_name, style_id)
-
-    def _unique_user_style_id(self, preset: SubtitleStylePreset) -> str:
-        base = f"{preset.short_id}-custom"
-        renderer = preset.renderer.value
-        candidate = f"{renderer}/{base}"
-        index = 2
-        while load_style(candidate, renderer=renderer) is not None:
-            candidate = f"{renderer}/{base}-{index}"
-            index += 1
-        return candidate
-
-    def _sync_style_actions(self):
-        current = self.styleNameComboBox.comboBox.currentText()
-        self.deleteStyleButton.setEnabled(self._is_user_style(current))
-
-    def _ass_preset_from_ui(self, style_id: str) -> SubtitleStylePreset:
-        """保存 ASS 样式 (.json)"""
-        style = AssSubtitleStyle(
-            font_name=self.assPrimaryFontCard.comboBox.currentText(),
-            font_size=self.assPrimarySizeCard.spinBox.value(),
-            primary_color=self.assPrimaryColorCard.colorPicker.color.name(),
-            outline_color=self.assPrimaryOutlineColorCard.colorPicker.color.name(),
-            outline_width=self.assPrimaryOutlineSizeCard.spinBox.value(),
-            bold=True,
-            spacing=self.assPrimarySpacingCard.spinBox.value(),
-            margin_bottom=self.assVerticalSpacingCard.spinBox.value(),
-            secondary=AssSecondaryStyle(
-                font_name=self.assSecondaryFontCard.comboBox.currentText(),
-                font_size=self.assSecondarySizeCard.spinBox.value(),
-                color=self.assSecondaryColorCard.colorPicker.color.name(),
-                outline_color=self.assSecondaryOutlineColorCard.colorPicker.color.name(),
-                outline_width=self.assSecondaryOutlineSizeCard.spinBox.value(),
-                spacing=self.assSecondarySpacingCard.spinBox.value(),
-            ),
-        )
-        return SubtitleStylePreset(
-            id=style_id,
-            name=style_id.split("/", 1)[-1],
-            renderer=SubtitleRenderer.ASS,
-            source=StyleSource.USER,
-            style=style,
-        )
-
-    def _rounded_preset_from_ui(self, style_id: str) -> SubtitleStylePreset:
-        """保存圆角背景样式 (.json)"""
-        bg_color = self.roundedBgColorCard.colorPicker.color
-        bg_color_hex = f"#{bg_color.red():02x}{bg_color.green():02x}{bg_color.blue():02x}{bg_color.alpha():02x}"
-        style = RoundedSubtitleStyle(
-            font_name=self.roundedFontCard.comboBox.currentText(),
-            font_size=self.roundedFontSizeCard.spinBox.value(),
-            text_color=self.roundedTextColorCard.colorPicker.color.name(),
-            bg_color=bg_color_hex,
-            corner_radius=self.roundedCornerRadiusCard.spinBox.value(),
-            padding_h=self.roundedPaddingHCard.spinBox.value(),
-            padding_v=self.roundedPaddingVCard.spinBox.value(),
-            margin_bottom=self.roundedMarginBottomCard.spinBox.value(),
-            line_spacing=self.roundedLineSpacingCard.spinBox.value(),
-            letter_spacing=self.roundedLetterSpacingCard.spinBox.value(),
-        )
-        return SubtitleStylePreset(
-            id=style_id,
-            name=style_id.split("/", 1)[-1],
-            renderer=SubtitleRenderer.ROUNDED,
-            source=StyleSource.USER,
-            style=style,
-        )
-
-    def dragEnterEvent(self, event):
-        """拖入事件：检查是否为图片文件"""
-        if event.mimeData().hasUrls():
-            # 检查是否有图片文件
-            for url in event.mimeData().urls():
-                file_path = url.toLocalFile()
-                if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                    event.accept()
-                    return
-        event.ignore()
-
-    def dropEvent(self, event):
-        """放下事件：将图片设置为预览背景"""
-        files = [u.toLocalFile() for u in event.mimeData().urls()]
-        for file_path in files:
-            # 检查是否为图片文件
-            if file_path.lower().endswith((".png", ".jpg", ".jpeg")):
-                # 设置为预览背景
-                cfg.set(cfg.subtitle_preview_image, file_path)
-                # 更新预览
-                self.updatePreview()
-                # 显示成功提示
-                InfoBar.success(
-                    title=self.tr("成功"),
-                    content=self.tr("已设置预览背景：") + Path(file_path).name,
-                    orient=Qt.Horizontal,  # type: ignore
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=INFOBAR_DURATION_SUCCESS,
-                    parent=self,
-                )
-                break  # 只处理第一个图片文件
-
 
 class StyleNameDialog(AppDialog):
-    """样式名称输入对话框"""
+    """样式名称输入弹窗（新建 / 重命名共用）。"""
 
-    def __init__(self, parent=None):
-        super().__init__("新建样式", icon=AppIcon.ADD, parent=parent, width=380)
-        self.nameLineEdit = LineEdit(self.widget)
+    def __init__(self, title: str = "新建样式", initial: str = "", parent=None):
+        super().__init__(title, icon=AppIcon.EDIT, parent=parent, width=380)
+        self.nameLineEdit = AppLineEdit(parent=self.widget)
         self.nameLineEdit.setPlaceholderText(self.tr("输入样式名称"))
         self.nameLineEdit.setClearButtonEnabled(True)
+        self.nameLineEdit.setText(initial)
         self.bodyLayout.addWidget(self.nameLineEdit)
 
         self.addFooterStretch()
@@ -1388,7 +1098,35 @@ class StyleNameDialog(AppDialog):
         self.cancelButton.clicked.connect(lambda: self.done(0))
         self.confirmButton = self.addFooterButton(self.tr("确定"), kind="accent")
         self.confirmButton.clicked.connect(lambda: self.done(1))
-        self.confirmButton.setEnabled(False)
+        self.confirmButton.setEnabled(bool(initial.strip()))
         self.nameLineEdit.textChanged.connect(
             lambda text: self.confirmButton.setEnabled(bool(text.strip()))
         )
+
+
+class PreviewTextDialog(AppDialog):
+    """编辑预览示例文字（原文 / 译文）。"""
+
+    def __init__(self, source: str = "", target: str = "", parent=None):
+        super().__init__("预览文字", icon=AppIcon.FONT, parent=parent, width=420)
+        source_label = SectionLabel(self.tr("原文"))
+        apply_font(source_label, 13, 800)
+        self.bodyLayout.addWidget(source_label)
+        self.sourceEdit = AppLineEdit(parent=self.widget)
+        self.sourceEdit.setPlaceholderText(self.tr("用于预览的原文示例"))
+        self.sourceEdit.setText(source)
+        self.bodyLayout.addWidget(self.sourceEdit)
+
+        target_label = SectionLabel(self.tr("译文"))
+        apply_font(target_label, 13, 800)
+        self.bodyLayout.addWidget(target_label)
+        self.targetEdit = AppLineEdit(parent=self.widget)
+        self.targetEdit.setPlaceholderText(self.tr("用于预览的译文示例"))
+        self.targetEdit.setText(target)
+        self.bodyLayout.addWidget(self.targetEdit)
+
+        self.addFooterStretch()
+        self.cancelButton = self.addFooterButton(self.tr("取消"))
+        self.cancelButton.clicked.connect(lambda: self.done(0))
+        self.confirmButton = self.addFooterButton(self.tr("确定"), kind="accent")
+        self.confirmButton.clicked.connect(lambda: self.done(1))
