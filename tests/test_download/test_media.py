@@ -26,6 +26,11 @@ class TestSanitizeFilename:
     def test_empty_fallback(self):
         assert sanitize_filename("  ..") == "media"
 
+    def test_strips_all_control_chars(self):
+        # 旧正则 [\0-\31] 把 \31 当八进制(=chr25)，漏清 0x1a-0x1f；新版覆盖整段 0x00-0x1f
+        name = "a\x00b\x19c\x1ad\x1fe"
+        assert sanitize_filename(name) == "abcde"
+
 
 class TestMediaSummary:
     def test_fields(self):

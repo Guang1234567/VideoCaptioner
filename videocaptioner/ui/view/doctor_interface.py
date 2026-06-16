@@ -17,7 +17,6 @@ from qfluentwidgets import (
     CaptionLabel,
     InfoBar,
     ScrollArea,
-    SubtitleLabel,
     TitleLabel,
 )
 
@@ -33,7 +32,11 @@ from videocaptioner.ui.common.theme_tokens import (
     rgba,
 )
 from videocaptioner.ui.components.workbench import StatusPill as WbStatusPill
-from videocaptioner.ui.components.workbench import WorkbenchButton, draw_rounded_surface
+from videocaptioner.ui.components.workbench import (
+    WorkbenchButton,
+    apply_font,
+    draw_rounded_surface,
+)
 
 Translator = Callable[[str], str]
 
@@ -87,15 +90,17 @@ class TaskChip(QFrame):
     def __init__(self, data: TaskChipData, parent=None):
         super().__init__(parent)
         self.setObjectName("taskChip")
-        self.setFixedHeight(58)
+        self.setFixedHeight(62)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(3)
 
         category = QLabel(data.category, self)
         category.setObjectName("taskChipCategory")
+        apply_font(category, 12, 500)
         title = QLabel(data.title, self)
         title.setObjectName("taskChipTitle")
+        apply_font(title, 14, 700)  # 用 apply_font 走正确字重映射，避免 QSS font-weight 被压成黑体糊字
         title.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         layout.addWidget(category)
@@ -105,7 +110,7 @@ class TaskChip(QFrame):
         # 与 OptionCard 等内层卡片同一套表面：panel 上叠半透明卡 + 细边
         palette = app_palette()
         surface = palette.card_surface
-        draw_rounded_surface(self, surface, palette.line_soft, 12)
+        draw_rounded_surface(self, surface, palette.line_soft, 13)
         super().paintEvent(event)
 
 
@@ -178,10 +183,10 @@ class DiagnosticRow(QFrame):
         self.setObjectName("diagnosticRow")
         if item.status == ItemStatus.ERROR:
             self.setProperty("status", "error")
-        self.setFixedHeight(82)
+        self.setFixedHeight(78)  # 容纳 标题(16)+描述(13) 两行，紧凑不挤
 
         layout = QGridLayout(self)
-        layout.setContentsMargins(16, 11, 16, 11)
+        layout.setContentsMargins(16, 13, 16, 13)
         layout.setHorizontalSpacing(14)
         layout.setVerticalSpacing(0)
         layout.setColumnStretch(1, 1)
@@ -191,15 +196,17 @@ class DiagnosticRow(QFrame):
 
         title = QLabel(item.title, self)
         title.setObjectName("rowTitle")
+        apply_font(title, 16, 700)  # 正确字重(~72)；QSS font-weight 会被 Qt5 压成 ~98 黑体糊字
         title.setTextInteractionFlags(Qt.TextSelectableByMouse)
         description = QLabel(item.description, self)
         description.setObjectName("rowDescription")
+        apply_font(description, 13, 450)
         description.setWordWrap(True)
         description.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(5)
+        text_layout.setSpacing(3)  # 标题↔描述紧凑贴合（7 太松，标题副标题该靠近）
         text_layout.addWidget(title)
         text_layout.addWidget(description)
         layout.addLayout(text_layout, 0, 1, 2, 1)
@@ -226,26 +233,29 @@ class DiagnosticPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("diagnosticPanel")
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(18, 18, 18, 18)
-        self.layout.setSpacing(14)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
 
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
+        # 表头：标题 + 汇总胶囊，底部一条分隔线把标题和清单分开（对齐 design-doctor .panel-head）
+        self.headerFrame = QFrame(self)
+        self.headerFrame.setObjectName("diagnosticHeader")
+        header = QHBoxLayout(self.headerFrame)
+        header.setContentsMargins(18, 15, 16, 15)
         header.setSpacing(12)
-        title_group = QVBoxLayout()
-        title_group.setSpacing(5)
-        title = SubtitleLabel(self.tr("检查清单"), self)
-        title_group.addWidget(title)
-        header.addLayout(title_group, 1)
-        self.summaryPill = StatusPill(ItemStatus.PENDING, self)
+        # 面板标题用第一方字体（不再用 qfluent SubtitleLabel），与全站面板头一致
+        title = QLabel(self.tr("检查清单"), self.headerFrame)
+        title.setObjectName("diagnosticPanelTitle")  # 需显式着色，否则裸 QLabel 用默认色和深色面板不融合
+        apply_font(title, 18, 760)
+        header.addWidget(title, 1, Qt.AlignVCenter)
+        self.summaryPill = StatusPill(ItemStatus.PENDING, self.headerFrame)
         self.summaryPill.setMinimumWidth(104)
-        header.addWidget(self.summaryPill, 0, Qt.AlignTop)
-        self.layout.addLayout(header)
+        header.addWidget(self.summaryPill, 0, Qt.AlignVCenter)
+        self.layout.addWidget(self.headerFrame)
 
         self.rowsFrame = QFrame(self)
         self.rowsFrame.setObjectName("rowsFrame")
         self.rowsLayout = QVBoxLayout(self.rowsFrame)
-        self.rowsLayout.setContentsMargins(0, 0, 0, 0)
+        self.rowsLayout.setContentsMargins(10, 4, 10, 8)
         self.rowsLayout.setSpacing(0)
         self.layout.addWidget(self.rowsFrame)
 
@@ -272,8 +282,11 @@ class DiagnosticPanel(QFrame):
                 self.tr("{count} 项待检查").format(count=pending), "neutral"
             )
 
-        for item in sorted(items, key=lambda i: 0 if i.status == ItemStatus.ERROR else 1):
+        ordered = sorted(items, key=lambda i: 0 if i.status == ItemStatus.ERROR else 1)
+        for idx, item in enumerate(ordered):
             row = DiagnosticRow(item, actions_enabled=actions_enabled, parent=self.rowsFrame)
+            if idx == len(ordered) - 1:
+                row.setProperty("last", "true")  # 末行去掉底分隔线，避免悬空线
             row.actionRequested.connect(self.actionRequested)
             self.rowsLayout.addWidget(row)
 
@@ -445,22 +458,15 @@ class DoctorInterface(ScrollArea):
             self._open_settings_page(page_key)
 
     def _open_settings_page(self, page_key: str):
-        # 跳转成功不弹通知：通知挂在已离开的诊断页上，返回时才残留弹出。
         window = self.window()
         if hasattr(window, "openSettingsPage"):
-            opened = window.openSettingsPage(page_key)  # type: ignore[attr-defined]
-            if opened is False:
+            if window.openSettingsPage(page_key) is False:  # type: ignore[attr-defined]
                 InfoBar.error(
                     self.tr("跳转失败"),
                     self.tr("没有找到对应的设置页。"),
                     duration=INFOBAR_DURATION_ERROR,
                     parent=self,
                 )
-        else:
-            target = getattr(window, "settingInterface", None)
-            if target is not None and hasattr(window, "switchTo"):
-                if target.setCurrentPage(page_key):
-                    window.switchTo(target)  # type: ignore[attr-defined]
 
 
 def _clear_layout(layout):
@@ -816,34 +822,42 @@ QWidget#scrollWidget {{
 QFrame#taskStrip {{
     background: {palette.panel};
     border: 1px solid {palette.line};
-    border-radius: 14px;
+    border-radius: 16px;
 }}
 QFrame#taskChip {{
     background: transparent;
     border: none;
 }}
+QLabel#diagnosticPanelTitle {{
+    color: {palette.text};
+    background: transparent;
+}}
 QLabel#taskChipCategory {{
     color: {palette.subtle};
-    font-size: 12px;
 }}
 QLabel#taskChipTitle {{
     color: {palette.text};
-    font-size: 14px;
-    font-weight: 700;
 }}
 QFrame#diagnosticPanel {{
     background: {palette.panel};
     border: 1px solid {palette.line};
     border-radius: 14px;
 }}
+QFrame#diagnosticHeader {{
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid {palette.line_soft};
+}}
 QFrame#rowsFrame {{
-    background: {palette.panel};
-    border: 1px solid {palette.line_soft};
-    border-radius: 12px;
+    background: transparent;
+    border: none;
 }}
 QFrame#diagnosticRow {{
     background: {palette.panel};
     border-bottom: 1px solid {palette.line_soft};
+}}
+QFrame#diagnosticRow[last="true"] {{
+    border-bottom: none;
 }}
 QFrame#diagnosticRow[status="error"] {{
     background: {rgba(palette.danger, 0.08)};
@@ -851,12 +865,9 @@ QFrame#diagnosticRow[status="error"] {{
 }}
 QLabel#rowTitle {{
     color: {palette.text};
-    font-size: 15px;
-    font-weight: 700;
 }}
 QLabel#rowDescription {{
     color: {palette.muted};
-    font-size: 12px;
 }}
 """
 

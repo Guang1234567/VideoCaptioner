@@ -496,9 +496,10 @@ class ConfirmPanel(QFrame):
         self._heights = list(summary.get("qualities") or [])
         labels = ["最佳"] + [f"{h}p" for h in self._heights]
         self.qualitySelect.setItems(labels, labels[0])
-        has_choices = bool(self._heights)
-        self.qualityLabel.setVisible(has_choices)
-        self.qualitySelect.setVisible(has_choices)
+        # 始终显示清晰度选择（至少「最佳」）：没探测到分档时也让用户知道是自动选最佳，
+        # 而不是只剩一个下载按钮、以为没有清晰度可选。
+        self.qualityLabel.setVisible(True)
+        self.qualitySelect.setVisible(True)
 
     def selectedHeight(self) -> Optional[int]:
         text = self.qualitySelect.currentText()

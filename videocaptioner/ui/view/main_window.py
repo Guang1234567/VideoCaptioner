@@ -28,7 +28,7 @@ from videocaptioner.ui.view.doctor_interface import DoctorInterface
 from videocaptioner.ui.view.dubbing_interface import DubbingInterface
 from videocaptioner.ui.view.home_interface import HomeInterface
 from videocaptioner.ui.view.llm_logs_interface import LLMLogsInterface
-from videocaptioner.ui.view.setting_interface import SettingInterface
+from videocaptioner.ui.view.setting_interface import SettingsDialog
 from videocaptioner.ui.view.subtitle_style_interface import SubtitleStyleInterface
 
 LOGO_PATH = ASSETS_PATH / "logo.png"
@@ -36,7 +36,7 @@ NAV_EXPAND_WIDTH = 132
 NAV_MINIMUM_EXPAND_WIDTH = 760
 # 字幕样式页是三栏布局，最窄需约 950px；窗口最小宽要容纳它 + 导航栏，否则右栏被切。
 WINDOW_MINIMUM_WIDTH = 1020
-SETTINGS_TITLEBAR_INSET = 16
+TITLEBAR_LEFT_INSET = 46  # 给左侧导航栏让位，标题栏不贴死左上角
 
 
 class MainWindow(FluentWindow):
@@ -49,14 +49,14 @@ class MainWindow(FluentWindow):
 
         # 创建子界面
         self.homeInterface = HomeInterface(self)
-        self.settingInterface = SettingInterface(self)
+        # 设置不再是导航 tab，而是定制大弹窗；SettingInterface 内嵌在弹窗里（长生命周期单例）
+        self.settingsDialog = SettingsDialog(self)
+        self.settingInterface = self.settingsDialog.settingInterface
         self.subtitleStyleInterface = SubtitleStyleInterface(self)
         self.dubbingInterface = DubbingInterface(self)
         self.doctorInterface = DoctorInterface(self)
         self.batchProcessInterface = BatchProcessInterface(self)
         self.llmLogsInterface = LLMLogsInterface(self)
-        self._lastContentInterface = self.homeInterface
-        self._settingsFullChrome = False
 
         # 初始化版本检查器
         self.versionChecker = VersionChecker()
@@ -90,8 +90,12 @@ class MainWindow(FluentWindow):
             self.subtitleStyleInterface, AppFluentIcon(AppIcon.SUBTITLE), self.tr("字幕样式")
         )
         self.addSubInterface(self.dubbingInterface, FIF.VOLUME, self.tr("配音"))
-        self.addSubInterface(self.llmLogsInterface, FIF.HISTORY, self.tr("请求日志"))
-        self.addSubInterface(self.doctorInterface, FIF.SEARCH, self.tr("诊断"))
+        self.addSubInterface(
+            self.llmLogsInterface, AppFluentIcon(AppIcon.HISTORY), self.tr("请求日志")
+        )
+        self.addSubInterface(
+            self.doctorInterface, AppFluentIcon(AppIcon.DIAGNOSTIC), self.tr("诊断")
+        )
 
         self.navigationInterface.addSeparator()
 
@@ -103,13 +107,15 @@ class MainWindow(FluentWindow):
             onClick=self.onGithubDialog,
             position=NavigationItemPosition.BOTTOM,
         )
-        self.addSubInterface(
-            self.settingInterface,
-            FIF.SETTING,
-            self.tr("设置"),
-            NavigationItemPosition.BOTTOM,
+        # 设置：底部导航动作项（点击弹出设置 modal，不作为可选中的 tab）
+        self.navigationInterface.addItem(
+            routeKey="settings",
+            text=self.tr("设置"),
+            icon=FIF.SETTING,
+            onClick=lambda: self.openSettingsPage("transcribe"),
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
         )
-        self.settingInterface.backRequested.connect(self._return_from_settings)
 
         # 设置默认界面
         self.switchTo(self.homeInterface)
@@ -119,28 +125,11 @@ class MainWindow(FluentWindow):
             self.setWindowTitle(interface.windowTitle())
         else:
             self.setWindowTitle(self.tr("卡卡字幕助手 -- VideoCaptioner"))
-        if interface is not self.settingInterface:
-            self._lastContentInterface = interface
         self.stackedWidget.setCurrentWidget(interface, popOut=False)
-        self._sync_chrome_for_interface(interface)
 
     def openSettingsPage(self, page_key: str) -> bool:  # noqa: N802
-        if not self.settingInterface.setCurrentPage(page_key):
-            return False
-        self.switchTo(self.settingInterface)
-        return True
-
-    def _return_from_settings(self):
-        self.switchTo(self._lastContentInterface or self.homeInterface)
-
-    def _sync_chrome_for_interface(self, interface=None):
-        is_settings = interface is self.settingInterface
-        self._settingsFullChrome = is_settings
-        self.navigationInterface.setVisible(not is_settings)
-        # 设置页隐藏导航后保留小内边距，窗口图标不贴死左上角
-        left = SETTINGS_TITLEBAR_INSET if is_settings else 46
-        self.titleBar.move(left, 0)
-        self.titleBar.resize(self.width() - left, self.titleBar.height())
+        """弹出设置 modal 并切到指定分类；分类无效返回 False。"""
+        return self.settingsDialog.open_at(page_key)
 
     def initWindow(self):
         """初始化窗口"""
@@ -231,13 +220,8 @@ class MainWindow(FluentWindow):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        left = (
-            SETTINGS_TITLEBAR_INSET
-            if getattr(self, "_settingsFullChrome", False)
-            else 46
-        )
-        self.titleBar.move(left, 0)
-        self.titleBar.resize(self.width() - left, self.titleBar.height())
+        self.titleBar.move(TITLEBAR_LEFT_INSET, 0)
+        self.titleBar.resize(self.width() - TITLEBAR_LEFT_INSET, self.titleBar.height())
         if hasattr(self, "splashScreen"):
             self.splashScreen.resize(self.size())
 

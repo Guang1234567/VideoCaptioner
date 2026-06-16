@@ -34,6 +34,7 @@ class AppIcon(str, Enum):
     CLOSE = "close"
     COPY = "copy"
     DELETE = "delete"
+    DIAGNOSTIC = "diagnostic"
     DOCUMENT = "document"
     DOWNLOAD = "download"
     EDIT = "edit"

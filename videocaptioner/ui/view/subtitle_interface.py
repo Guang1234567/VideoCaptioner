@@ -54,7 +54,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qfluentwidgets import Action, InfoBar, RoundMenu, TextEdit
+from qfluentwidgets import Action, InfoBar, RoundMenu
 from qfluentwidgets import FluentIcon as FIF
 
 from videocaptioner.core.asr.asr_data import ASRData
@@ -76,10 +76,12 @@ from videocaptioner.core.utils.platform_utils import open_folder, reveal_in_expl
 from videocaptioner.ui.common.app_icons import AppIcon
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.theme_tokens import app_palette, rgba
-from videocaptioner.ui.components.app_dialog import AppDialog
+from videocaptioner.ui.components.app_dialog import AppDialog, ConfirmDialog
 from videocaptioner.ui.components.workbench import (
+    AppTextEdit,
     CollapsibleSideHost,
     CompactButton,
+    DangerButton,
     DropZone,
     ElidedLabel,
     ErrorCard,
@@ -350,10 +352,19 @@ class SubtitleTableView(QTableView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._hover_row = -1
+        self._dbl_global = None  # 最近一次双击的全局坐标，供行内编辑器定位光标
         self.setMouseTracking(True)
 
     def hoverRow(self) -> int:
         return self._hover_row
+
+    def takeDoubleClickPos(self):
+        pos, self._dbl_global = self._dbl_global, None
+        return pos
+
+    def mouseDoubleClickEvent(self, event):
+        self._dbl_global = event.globalPos()
+        super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event):
         row = self.rowAt(event.pos().y())
@@ -369,11 +380,36 @@ class SubtitleTableView(QTableView):
         super().leaveEvent(event)
 
 
+class SubtitleLineEditor(QLineEdit):
+    """字幕行内编辑器：双击进入编辑不再全选整格——光标落在点击处（取不到则置于末尾），
+
+    与专业字幕工具（Aegisub / Subtitle Edit）一致：双击定位、可直接续编而非误删全行。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._click_global = None
+
+    def setClickPoint(self, global_pos):
+        self._click_global = global_pos
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        # Qt 默认聚焦即 selectAll；改为按点击处定位光标、不选中
+        self.deselect()
+        pos = len(self.text())
+        if self._click_global is not None:
+            local = self.mapFromGlobal(self._click_global)
+            if self.rect().contains(local):
+                pos = self.cursorPositionAt(local)
+            self._click_global = None
+        self.setCursorPosition(pos)
+
+
 class SubtitleEditDelegate(QStyledItemDelegate):
     """字幕单元格编辑委托。
 
     - 深色行内编辑器（替换系统白色编辑框），accent 边框、与单元格排版对齐
-    - Enter 提交后自动编辑下一条同列（专业字幕软件的连续审校流）
+    - 双击定位光标（不全选）；Enter 提交并编辑下一条、Shift+Enter 上一条、Esc 取消
     - 悬浮行画淡色高亮
     """
 
@@ -392,7 +428,8 @@ class SubtitleEditDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         palette = app_palette()
-        editor = QLineEdit(parent)
+        editor = SubtitleLineEditor(parent)
+        editor.setClickPoint(self._view.takeDoubleClickPos())
         apply_font(editor, 15, 650)
         editor.setStyleSheet(
             f"""
@@ -413,20 +450,25 @@ class SubtitleEditDelegate(QStyledItemDelegate):
         editor.setGeometry(option.rect.adjusted(4, 7, -4, -7))
 
     def eventFilter(self, editor, event):
-        if event.type() == QEvent.KeyPress and event.key() in (
-            Qt.Key_Return,  # type: ignore[attr-defined]
-            Qt.Key_Enter,  # type: ignore[attr-defined]
-        ):
-            self.commitData.emit(editor)
-            self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
-            current = self._view.currentIndex()
-            next_index = current.sibling(current.row() + 1, current.column())
-            if next_index.isValid():
-                QTimer.singleShot(0, lambda: self._edit_next(next_index))
-            return True
+        if event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key == Qt.Key_Escape:  # type: ignore[attr-defined]
+                # 取消编辑、还原原文（Qt 默认也会处理，这里显式以确保一致）
+                self.closeEditor.emit(editor, QStyledItemDelegate.RevertModelCache)
+                return True
+            if key in (Qt.Key_Return, Qt.Key_Enter):  # type: ignore[attr-defined]
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
+                # Shift+Enter 编辑上一条，Enter 编辑下一条（连续审校流）
+                step = -1 if event.modifiers() & Qt.ShiftModifier else 1  # type: ignore[attr-defined]
+                current = self._view.currentIndex()
+                target = current.sibling(current.row() + step, current.column())
+                if target.isValid():
+                    QTimer.singleShot(0, lambda: self._edit_at(target))
+                return True
         return super().eventFilter(editor, event)
 
-    def _edit_next(self, index):
+    def _edit_at(self, index):
         self._view.setCurrentIndex(index)
         self._view.scrollTo(index)
         self._view.edit(index)
@@ -530,6 +572,7 @@ class SubtitleTablePanel(WorkbenchPanel):
     browseRequested = pyqtSignal()
     saveFormatRequested = pyqtSignal(str)
     openFolderRequested = pyqtSignal()
+    resetRequested = pyqtSignal()
 
     def __init__(self, model: SubtitleTableModel, parent=None):
         super().__init__(parent, padded=False)
@@ -562,6 +605,10 @@ class SubtitleTablePanel(WorkbenchPanel):
         self.replaceButton = CompactButton(self.tr("更换"), AppIcon.FOLDER_ADD, self.head)
         self.replaceButton.clicked.connect(self.browseRequested)
         head_layout.addWidget(self.replaceButton)
+        # 清空当前字幕、回到初始态（报错/完成后可一键重来）
+        self.resetButton = DangerButton(self.tr("清空"), AppIcon.DELETE, self.head)
+        self.resetButton.clicked.connect(self.resetRequested)
+        head_layout.addWidget(self.resetButton)
         # 右栏折叠时的主操作入口（状态与右栏主按钮同步，32 高与头部按钮组一致）。
         self.headStartButton = WorkbenchButton(
             self.tr("开始处理"), AppIcon.PLAY, primary=True, height=32, parent=self.head
@@ -637,7 +684,7 @@ class SubtitleTablePanel(WorkbenchPanel):
         其余状态显示保存/目录/更换；状态与条数统一由底部状态条表达。"""
         empty = state == PageState.EMPTY
         running = state == PageState.RUNNING
-        for button in (self.saveButton, self.folderButton, self.replaceButton):
+        for button in (self.saveButton, self.folderButton, self.replaceButton, self.resetButton):
             button.setVisible(not empty)
             button.setEnabled(not running)
 
@@ -693,7 +740,7 @@ class SubtitleTablePanel(WorkbenchPanel):
                 border-right: 1px solid {palette.line_soft};
                 padding-left: 14px;
                 font-size: 15px;
-                font-weight: 800;
+                font-weight: bold;
                 text-align: left;
             }}
             QTableView QTableCornerButton::section {{
@@ -714,7 +761,7 @@ class SubtitleTablePanel(WorkbenchPanel):
                 border-right: 1px solid {palette.line_soft};
                 padding-left: 14px;
                 font-size: 15px;
-                font-weight: 800;
+                font-weight: bold;
             }}
             """
         )
@@ -840,7 +887,7 @@ class PromptDialog(AppDialog):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("文稿提示", icon=AppIcon.DOCUMENT, parent=parent, width=560)
-        self.textEdit = TextEdit(self.widget)
+        self.textEdit = AppTextEdit(parent=self.widget, min_height=360)
         self.textEdit.setPlaceholderText(
             self.tr(
                 "请输入文稿提示（辅助校正字幕和翻译）\n\n"
@@ -852,8 +899,7 @@ class PromptDialog(AppDialog):
                 "注意: 使用小型 LLM 模型时建议控制文稿在 1 千字内。"
             )
         )
-        self.textEdit.setText(cfg.custom_prompt_text.value)
-        self.textEdit.setMinimumHeight(360)
+        self.textEdit.setPlainText(cfg.custom_prompt_text.value)
         self.bodyLayout.addWidget(self.textEdit)
 
         self.addFooterStretch()
@@ -887,6 +933,8 @@ class SubtitleInterface(QWidget):
         self.task: Optional[SubtitleTask] = None
         self.subtitle_path: Optional[str] = None
         self._output_path: Optional[str] = None
+        # FAILED 细分：配置缺失（→打开配置）还是运行期失败（→重试），决定按钮文案=行为
+        self._failure_is_config = False
         self._translated_count = 0
         self._config_signal_connections: list[tuple[Any, Callable]] = []
 
@@ -906,12 +954,22 @@ class SubtitleInterface(QWidget):
         self._sync_collapsed_controls()
 
     def _sync_collapsed_controls(self):
-        """折叠态头部控件：展开按钮始终可达；主按钮空态无意义则隐藏。"""
+        """折叠态头部控件：展开按钮始终可达；主按钮空态无意义则隐藏。
+
+        运行中且侧栏折叠时，侧栏里的「取消」不可见——把头部主按钮变成「取消」，
+        否则用户折叠后就没有任何可取消的入口（对齐转录页 always-visible 取消）。
+        """
         collapsed = self.sideHost.isCollapsed()
+        head = self.tablePanel.headStartButton
         self.tablePanel.expandButton.setVisible(collapsed)
-        self.tablePanel.headStartButton.setVisible(
-            collapsed and self.state != PageState.EMPTY
-        )
+        if collapsed and self.state == PageState.RUNNING:
+            head.setVisible(True)
+            head.setText(self.tr("取消"))
+            head.setIcon(AppIcon.CANCEL)
+            head.setPrimary(False)
+            head.setEnabled(True)
+        else:
+            head.setVisible(collapsed and self.state != PageState.EMPTY)
 
     # ------------------------------------------------------------------ UI
 
@@ -942,6 +1000,7 @@ class SubtitleInterface(QWidget):
         self.tablePanel.browseRequested.connect(self._browse_file)
         self.tablePanel.saveFormatRequested.connect(self._save_as_format)
         self.tablePanel.openFolderRequested.connect(self._open_folder)
+        self.tablePanel.resetRequested.connect(self._reset_to_empty)
         self.tablePanel.table.customContextMenuRequested.connect(self._show_context_menu)
         self.tablePanel.table.setContextMenuPolicy(Qt.CustomContextMenu)  # type: ignore[arg-type]
 
@@ -1043,7 +1102,7 @@ class SubtitleInterface(QWidget):
         if state == PageState.READY:
             bar.showReady(count)
         elif state == PageState.FAILED:
-            bar.showFailed(self.tr("配置缺失") if not self._output_path else self.tr("处理失败"), error)
+            bar.showFailed(self.tr("配置缺失") if self._failure_is_config else self.tr("处理失败"), error)
         elif state == PageState.DONE:
             bar.showDone(Path(self._output_path).name if self._output_path else "")
         # RUNNING 的底部条由进度回调驱动
@@ -1053,7 +1112,12 @@ class SubtitleInterface(QWidget):
             PageState.READY: (self.tr("开始处理"), AppIcon.PLAY, True, True),
             PageState.RUNNING: (self.tr("处理中"), AppIcon.SYNC, False, False),
             PageState.DONE: (self.tr("进入合成"), AppIcon.RIGHT_ARROW, True, True),
-            PageState.FAILED: (self.tr("打开处理配置"), AppIcon.SETTING, True, True),
+            # 配置缺失→「打开处理配置」(SETTING)；运行期失败→「重试」(SYNC)，文案与点击行为一致
+            PageState.FAILED: (
+                (self.tr("打开处理配置"), AppIcon.SETTING, True, True)
+                if self._failure_is_config
+                else (self.tr("重试"), AppIcon.SYNC, True, True)
+            ),
         }
         text, icon, primary, enabled = buttons[state]
         self.sidePanel.setButton(text, icon=icon, primary=primary, enabled=enabled)
@@ -1096,6 +1160,27 @@ class SubtitleInterface(QWidget):
         self.tablePanel.setFile(Path(file_path).name, loaded=True)
         self._apply_state(PageState.READY)
 
+    def _reset_to_empty(self):
+        """清空当前字幕、回到初始空态：报错或完成后可一键重来（处理中先取消再清）。"""
+        if self.state == PageState.RUNNING:
+            return
+        dialog = ConfirmDialog(
+            self.tr("清空当前字幕"),
+            self.tr("将清除已载入的字幕与未保存的编辑，回到初始状态。确定继续？"),
+            self,
+            confirm_text=self.tr("清空"),
+            danger=True,
+            icon=AppIcon.DELETE,
+        )
+        if not dialog.exec():
+            return
+        self.subtitle_path = None
+        self.task = None
+        self._output_path = None
+        self.model.replace_all({})
+        self.tablePanel.setFile(self.tr("未选择字幕文件"), loaded=False)
+        self._apply_state(PageState.EMPTY)
+
     # ------------------------------------------------------- process flow
 
     def _preflight_error(self) -> Optional[str]:
@@ -1120,11 +1205,15 @@ class SubtitleInterface(QWidget):
     def _on_primary_clicked(self):
         if self.state in (PageState.READY,):
             self._start_processing()
+        elif self.state == PageState.RUNNING:
+            # 仅折叠态头部主按钮在运行中会变成「取消」并可点（侧栏主按钮此时禁用）
+            self._cancel_processing()
         elif self.state == PageState.FAILED:
-            if self._preflight_error() is None:
-                self._start_processing()
-            else:
+            # 文案=行为：配置缺失→打开配置；运行期失败→重试（_start_processing 内部仍会预检）
+            if self._failure_is_config:
                 self.show_subtitle_settings()
+            else:
+                self._start_processing()
         elif self.state == PageState.DONE:
             self._enter_synthesis()
 
@@ -1145,6 +1234,7 @@ class SubtitleInterface(QWidget):
         error = self._preflight_error()
         if error is not None:
             self._output_path = None
+            self._failure_is_config = True  # 预检失败＝配置缺失 → 按钮显示「打开处理配置」
             self._apply_state(PageState.FAILED, error=error)
             return
         # start_processing 在控制器忙时返回 False；先启动，忙则直接返回，避免页面进
@@ -1190,7 +1280,7 @@ class SubtitleInterface(QWidget):
             self.finished.emit(video_path, output_path)
 
     def _on_failed(self, error: str):
-        self._output_path = "runtime"  # 标记为运行期失败（区别于配置缺失）
+        self._failure_is_config = False  # 运行期失败 → 按钮显示「重试」
         self._apply_state(PageState.FAILED, error=error)
         self._output_path = None
 
@@ -1346,15 +1436,10 @@ class SubtitleInterface(QWidget):
             self.sidePanel.setPromptState(bool(cfg.custom_prompt_text.value.strip()))
 
     def show_subtitle_settings(self):
-        """跳转到全局字幕处理配置页。"""
+        """弹出全局字幕处理配置（翻译与优化）。"""
         window = self.window()
         if hasattr(window, "openSettingsPage"):
-            if window.openSettingsPage("translate") is not False:  # type: ignore[attr-defined]
-                return
-        setting_interface = getattr(window, "settingInterface", None)
-        if setting_interface is not None and hasattr(window, "switchTo"):
-            if setting_interface.setCurrentPage("translate"):
-                window.switchTo(setting_interface)  # type: ignore[attr-defined]
+            window.openSettingsPage("translate")  # type: ignore[attr-defined]
 
     def _warn_processing(self):
         InfoBar.warning(

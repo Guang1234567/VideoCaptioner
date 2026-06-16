@@ -480,7 +480,6 @@ def _check_task_creation(output_dir: Path, app, screenshot_names: list[str]) -> 
 
 def _check_settings(app) -> None:
     """设置页核心回归：provider 切换的行可见性、模型选项缓存、key 去空白、主题色重置。"""
-    from PyQt5.QtCore import QEvent
     from PyQt5.QtGui import QColor
 
     import videocaptioner.ui.view.setting_interface as setting_module
@@ -490,11 +489,6 @@ def _check_settings(app) -> None:
         TranscribeModelEnum,
         TranslatorServiceEnum,
     )
-    from videocaptioner.ui.common.app_icons import (
-        AppIcon,
-        custom_icon_path,
-        render_svg_icon,
-    )
     from videocaptioner.ui.common.config import DEFAULT_THEME_COLOR, cfg
     from videocaptioner.ui.view.setting_interface import SettingInterface
 
@@ -503,17 +497,8 @@ def _check_settings(app) -> None:
     widget.show()
     app.processEvents()
 
-    # 返回按钮使用 app 自有 SVG 图标，且 hover 不会换成别的图标。
-    assert custom_icon_path(AppIcon.ARROW_LEFT).is_file()
-    assert not render_svg_icon(AppIcon.ARROW_LEFT, "#28f08b", 17).isNull()
-    assert not widget.backButton.icon().isNull()
-    assert widget.backButton.iconSize().width() == 17
-    assert widget.backButton.property("appIcon") == AppIcon.ARROW_LEFT.value
-    app.sendEvent(widget.backButton, QEvent(QEvent.Enter))
-    app.processEvents()
-    assert widget.backButton.property("appIcon") == AppIcon.ARROW_LEFT.value
-    app.sendEvent(widget.backButton, QEvent(QEvent.Leave))
-    app.processEvents()
+    # 设置已改为弹窗（SettingsDialog），侧栏不再有「返回应用」按钮；关闭走右上角 X / Esc / 遮罩。
+    assert not hasattr(widget, "backButton")
 
     # 翻译服务：LLM 类显示反思/批量/线程行，DeepLx 显示 endpoint 行。
     widget.setCurrentPage("translate-service")
@@ -1008,22 +993,26 @@ def _check_subtitle_style(output_dir: Path, app, screenshot_names: list[str]) ->
 
     # 大窗回归守卫：自绘卡片/参数行若漏设透明背景，深色主题下会露出 Qt 白底。
     # 采样左栏样式库下方空白区 + 右栏参数区，断言必须是深色（亮度 < 80）。
-    widget.resize(1900, 1400)
-    _settle_widget(widget, app)
-    image = widget.grab().toImage()
-    w_px, h_px = image.width(), image.height()
-    samples = {
-        "library-empty": (90, int(h_px * 0.7)),
-        "inspector-area": (w_px - 180, int(h_px * 0.45)),
-    }
-    for where, (x, y) in samples.items():
-        color = image.pixelColor(x, y)
-        lum = (color.red() + color.green() + color.blue()) // 3
-        if lum >= 80:
-            raise AssertionError(
-                f"subtitle-style {where} 在深色主题下发白（亮度 {lum} @ {x},{y}）："
-                "自绘组件可能漏设透明背景，露出了 Qt 默认白底。"
-            )
+    # 仅在深色主题下有意义——浅色主题底色本就接近白，跑此断言会误报。
+    from videocaptioner.ui.common.theme_tokens import is_dark_theme
+
+    if is_dark_theme():
+        widget.resize(1900, 1400)
+        _settle_widget(widget, app)
+        image = widget.grab().toImage()
+        w_px, h_px = image.width(), image.height()
+        samples = {
+            "library-empty": (90, int(h_px * 0.7)),
+            "inspector-area": (w_px - 180, int(h_px * 0.45)),
+        }
+        for where, (x, y) in samples.items():
+            color = image.pixelColor(x, y)
+            lum = (color.red() + color.green() + color.blue()) // 3
+            if lum >= 80:
+                raise AssertionError(
+                    f"subtitle-style {where} 在深色主题下发白（亮度 {lum} @ {x},{y}）："
+                    "自绘组件可能漏设透明背景，露出了 Qt 默认白底。"
+                )
     widget.close()
 
 
@@ -1047,6 +1036,16 @@ def _check_dubbing(output_dir: Path, app, screenshot_names: list[str]) -> None:
         assert widget.previewPanel.cloneSection.isVisible() == (provider == "siliconflow")
         for key, card in widget.providerCards.items():
             assert card.isActive() == (key == provider)
+
+    # 回归：切换提供商必须中止进行中的试听播放，并复位按钮文案（避免「停止」标签残留、点击行为相反）
+    play_btn = widget.previewPanel.customPreviewButton
+    widget._playing_button = play_btn
+    widget._set_preview_button(play_btn, "playing")
+    assert play_btn.text() == "停止"
+    widget._on_provider_changed("siliconflow")
+    app.processEvents()
+    assert widget._playing_button is None, "切换提供商后未停止播放"
+    assert play_btn.text() != "停止", "切换提供商后按钮文案仍是「停止」"
 
     widget._on_gender_filter("女声")
     app.processEvents()

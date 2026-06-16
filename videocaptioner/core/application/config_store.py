@@ -71,6 +71,13 @@ DEFAULTS: Dict[str, Any] = {
         "mica_enabled": False,
         "check_update_at_startup": True,
         "subtitle_preview_image": "",
+        # 字幕样式预览的自定义示例文字（原文/译文）与调色板最近用色：UI 持久化偏好，
+        # 必须进 DEFAULTS + 绑定，否则 cfg.set(save=True) 是空操作、重启即丢。
+        "subtitle_preview_source": (
+            "Welcome to apply for the prestigious South China Normal University!"
+        ),
+        "subtitle_preview_target": "欢迎报考百年名校华南师范大学",
+        "recent_colors": [],
         # 工作台右栏折叠态 + 批量页模式/并发：UI 持久化键，过去漏在 DEFAULTS 外，
         # 导致 `config set` 因 parse_value 查不到键而按字符串存（bool 反向、范围抛错）。
         "transcribe_panel_collapsed": False,

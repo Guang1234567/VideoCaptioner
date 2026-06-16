@@ -4,15 +4,28 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-from PyQt5.QtCore import Qt, QThread, QTimer, QUrl, pyqtSignal
-from PyQt5.QtGui import QColor, QDesktopServices
+from PyQt5.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QRectF,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt5.QtGui import QColor, QDesktopServices, QPainterPath, QRegion
 from PyQt5.QtWidgets import (
+    QDialog,
     QFileDialog,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 from qfluentwidgets import InfoBar, Theme, setTheme, setThemeColor
+from qfluentwidgets.components.dialog_box.mask_dialog_base import MaskDialogBase
 
 from videocaptioner.config import (
     AUTHOR,
@@ -48,6 +61,7 @@ from videocaptioner.core.speech import (
     create_speech_synthesizer,
 )
 from videocaptioner.core.utils.cache import disable_cache, enable_cache
+from videocaptioner.ui.common.app_icons import AppIcon
 from videocaptioner.ui.common.config import DEFAULT_THEME_COLOR, ThemeMode, cfg
 from videocaptioner.ui.common.dubbing_options import (
     get_provider_option,
@@ -58,6 +72,7 @@ from videocaptioner.ui.common.model_options import (
     FUN_ASR_MODEL_OPTIONS,
     WHISPER_API_MODEL_OPTIONS,
 )
+from videocaptioner.ui.common.theme_tokens import app_palette
 from videocaptioner.ui.components.model_manager_dialog import ModelManagerDialog
 from videocaptioner.ui.components.settings_controls import (
     CONTROL_WIDTH,
@@ -76,6 +91,7 @@ from videocaptioner.ui.components.settings_controls import (
     make_button,
     options_from,
 )
+from videocaptioner.ui.components.workbench import RoundIconButton
 
 SETTINGS_PAGE_ALIASES = {
     "asr": "transcribe",
@@ -118,6 +134,10 @@ def _to_qfluent_theme(theme: ThemeMode) -> Theme:
 
 class SettingInterface(SettingsShell):
     """First-party settings page backed by the shared TOML config."""
+
+    # 内嵌在 SettingsDialog 里时无法直接 self.window() 拿到主窗口跳转字幕样式 tab，
+    # 改发信号由 SettingsDialog 接管（先关弹窗再切主窗口）。
+    openStylePageRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -1215,11 +1235,8 @@ class SettingInterface(SettingsShell):
             self._sync_theme_color_swatch(cfg.themeColor.value)
 
     def _open_subtitle_style_page(self) -> None:
-        window = self.window()
-        target = getattr(window, "subtitleStyleInterface", None)
-        switch_to = getattr(window, "switchTo", None)
-        if target is not None and callable(switch_to):
-            switch_to(target)
+        # 弹窗内：发信号让 SettingsDialog 关闭弹窗并切到主窗口的字幕样式 tab
+        self.openStylePageRequested.emit()
 
     def _show_restart_tip(self) -> None:
         InfoBar.success(
@@ -1745,3 +1762,111 @@ class LLMModelLoadThread(QThread):
             self.finished.emit(self.service, models)
         except Exception as exc:
             self.error.emit(str(exc))
+
+
+class SettingsDialog(MaskDialogBase):
+    """设置弹窗：为设置定制的大尺寸 modal（不复用通用确认框 AppDialog/ConfirmDialog）。
+
+    遮罩 + 居中大卡片，卡片内嵌 SettingInterface（左侧分类侧栏 + 右侧滚动内容）。
+    侧栏顶部「返回应用」即关闭；Esc 同样关闭。长生命周期单例复用：保证内部 check
+    线程的 closeEvent 终止契约（见 SettingInterface.closeEvent）继续有效。
+    """
+
+    CARD_RADIUS = 16
+
+    def __init__(self, parent=None):
+        main_window = parent.window() if parent is not None else None
+        super().__init__(main_window)
+        self._main_window = main_window
+        # 卡片阴影是静态的（淡入/淡出只动遮罩、不动卡片，见 showEvent/done），
+        # 不再每帧重栅格，因此可以用更柔和的大 blur 让卡片更有浮起感。
+        self.setShadowEffect(48, (0, 12), QColor(0, 0, 0, 130))
+        self.setMaskColor(QColor(0, 0, 0, 150))
+        self.setClosableOnMaskClicked(True)  # 点遮罩空白处关闭设置弹窗
+        # 卡片按固定尺寸居中，而非被遮罩拉满
+        self._hBoxLayout.setAlignment(self.widget, Qt.AlignCenter)  # type: ignore[arg-type]
+
+        card = self.widget
+        card.setObjectName("settingsDialogCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.settingInterface = SettingInterface(card)
+        self.settingInterface.backRequested.connect(lambda: self.done(0))
+        self.settingInterface.openStylePageRequested.connect(self._go_subtitle_style)
+        layout.addWidget(self.settingInterface)
+        # 右上角关闭叉（更普适）：覆盖在内容之上，点它 / Esc / 点遮罩都能关
+        self.closeButton = RoundIconButton(AppIcon.CLOSE, parent=card)
+        self.closeButton.clicked.connect(lambda: self.done(0))
+        self._sync_card_style()
+
+    def _go_subtitle_style(self) -> None:
+        """关闭设置弹窗并切到主窗口的字幕样式 tab。"""
+        self.done(0)
+        target = getattr(self._main_window, "subtitleStyleInterface", None)
+        switch_to = getattr(self._main_window, "switchTo", None)
+        if target is not None and callable(switch_to):
+            switch_to(target)
+
+    def open_at(self, page_key: str) -> bool:
+        """切到指定分类并弹出；分类无效则不弹、返回 False。"""
+        if not self.settingInterface.setCurrentPage(page_key):
+            return False
+        self.exec()
+        return True
+
+    def showEvent(self, event):  # noqa: N802
+        self._resize_card()
+        # 关键优化：不走 MaskDialogBase 的「整窗淡入」——它给整窗（遮罩 + 940x680
+        # 卡片 + 阴影）套一个 opacity 动画，每帧都要把大卡片重栅格化（实测约 9ms/帧，
+        # 淡入期间累计重栅格 ≈100ms+），表现为「右侧内容像是慢慢才加载出来」。
+        # 改为只淡入遮罩（纯色矩形，约 0.4ms/帧），卡片即时满不透明出现：内容立刻可见、
+        # 开/关都跟手。
+        QDialog.showEvent(self, event)
+        self._fade_mask(0.0, 1.0, 150)
+
+    def done(self, code):  # noqa: N802
+        # 关闭同理：只淡出遮罩，不对大卡片做 opacity 动画（点遮罩空白处关闭也因此跟手）。
+        self._fade_mask(1.0, 0.0, 110, on_finish=lambda: QDialog.done(self, code))
+
+    def _fade_mask(self, start: float, end: float, duration: int, on_finish=None) -> None:
+        effect = QGraphicsOpacityEffect(self.windowMask)
+        self.windowMask.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setStartValue(start)
+        animation.setEndValue(end)
+        animation.setDuration(duration)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.finished.connect(lambda: self.windowMask.setGraphicsEffect(None))
+        if on_finish is not None:
+            animation.finished.connect(on_finish)
+        animation.start()
+        self._mask_animation = animation  # 持引用，防止动画被回收中断
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._resize_card()
+
+    def _resize_card(self) -> None:
+        host = self.parent()
+        if host is not None and host.width() > 0:
+            pw, ph = host.width(), host.height()
+        else:
+            pw, ph = self.width() or 1050, self.height() or 800
+        w = max(720, min(940, int(pw * 0.88)))
+        h = max(520, min(680, int(ph * 0.90)))
+        self.widget.setFixedSize(w, h)
+        # 等效 overflow:hidden——圆角裁剪，使内嵌内容的直角不戳出卡片圆角
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, w, h), self.CARD_RADIUS, self.CARD_RADIUS)
+        self.widget.setMask(QRegion(path.toFillPolygon().toPolygon()))
+        # 关闭叉钉在右上角，始终压在最上层
+        self.closeButton.move(w - self.closeButton.width() - 14, 14)
+        self.closeButton.raise_()
+
+    def _sync_card_style(self) -> None:
+        palette = app_palette()
+        self.widget.setStyleSheet(
+            f"QWidget#settingsDialogCard {{ background: {palette.bg};"
+            f" border-radius: {self.CARD_RADIUS}px; }}"
+        )

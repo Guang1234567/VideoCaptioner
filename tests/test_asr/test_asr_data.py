@@ -581,3 +581,42 @@ class TestHandleLongPath:
         twice = handle_long_path(once)
         assert twice == once
         assert "\\\\?\\\\" not in twice
+
+
+class TestFromSrtBilingualDetection:
+    """from_srt 双语识别：中↔英用便宜的脚本启发式（不碰 langdetect），同脚本退回 detect。"""
+
+    @staticmethod
+    def _srt(pairs):
+        blocks = []
+        for i, (top, bottom) in enumerate(pairs, 1):
+            blocks.append(f"{i}\n00:00:{i:02d},000 --> 00:00:{i:02d},900\n{top}\n{bottom}")
+        return "\n\n".join(blocks)
+
+    def test_zh_en_bilingual_via_heuristic(self, monkeypatch):
+        # 中↔英 4 行块应判为双语：原文中文、译文英文；且不应调用 langdetect
+        import videocaptioner.core.asr.asr_data as mod
+
+        def _boom(*_a, **_k):  # langdetect 一旦被调用就炸，证明走的是启发式
+            raise AssertionError("langdetect.detect should not be called for CJK pairs")
+
+        monkeypatch.setattr(mod, "detect", _boom)
+        srt = self._srt(
+            [("你好世界", "Hello world"), ("今天天气不错", "Nice weather today"),
+             ("我们开始吧", "Let us begin"), ("谢谢观看", "Thanks for watching")]
+        )
+        data = ASRData.from_srt(srt)
+        assert len(data.segments) == 4
+        assert data.segments[0].text == "你好世界"
+        assert data.segments[0].translated_text == "Hello world"
+
+    def test_single_language_multiline_not_bilingual(self, monkeypatch):
+        # 同语种(都英文)的 4 行块不应判为双语：两行合成一条多行字幕，无译文
+        import videocaptioner.core.asr.asr_data as mod
+
+        monkeypatch.setattr(mod, "detect", lambda _t: "en")  # 同语种 → detect 都返回 en
+        srt = self._srt([("First line here", "second line continues")] * 4)
+        data = ASRData.from_srt(srt)
+        assert len(data.segments) == 4
+        assert data.segments[0].translated_text == ""
+        assert "\n" in data.segments[0].text  # 多行合并而非原文/译文拆分

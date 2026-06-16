@@ -76,6 +76,9 @@ class DubbingConfig:
     style_prompt: str = ""
     fit_mode: FitMode = "tempo"
     max_speed: float = 1.35
+    # 默认把偏短的配音放慢拉伸到原时长，避免比原声短造成时间轴漂移/突兀静音。
+    stretch_to_fit: bool = True
+    min_speed: float = 0.5  # 放慢下限：过慢会发闷，低于此值就不再继续拉伸
     target_padding_ms: int = 80
     rewrite_too_long: bool = False
     rewrite_threshold: float = 1.15

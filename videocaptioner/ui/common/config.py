@@ -605,6 +605,9 @@ def _bindings() -> list[SharedConfigBinding]:
         SharedConfigBinding(cfg.micaEnabled, "ui.mica_enabled"),
         SharedConfigBinding(cfg.checkUpdateAtStartUp, "ui.check_update_at_startup"),
         SharedConfigBinding(cfg.subtitle_preview_image, "ui.subtitle_preview_image"),
+        SharedConfigBinding(cfg.subtitle_preview_source, "ui.subtitle_preview_source"),
+        SharedConfigBinding(cfg.subtitle_preview_target, "ui.subtitle_preview_target"),
+        SharedConfigBinding(cfg.recent_colors, "ui.recent_colors"),
         SharedConfigBinding(cfg.work_dir, "app.work_dir", from_toml=_work_dir_from_toml),
         SharedConfigBinding(cfg.keep_intermediates, "app.keep_intermediates"),
         SharedConfigBinding(cfg.cache_enabled, "app.cache_enabled"),
@@ -794,7 +797,11 @@ def _load_shared_config_to_state() -> None:
     shared_config = build_config()
     _syncing_shared_config = True
     try:
-        active_provider = str(get(shared_config, "llm.service", "openai") or "openai")
+        # 归一别名（siliconcloud/lmstudio -> silicon_cloud/lm_studio），否则手编/CLI
+        # 写入的别名拼出的 provider 段键匹配不上 binding，generic_api_key 兜底失效。
+        active_provider = _llm_service_to_key(
+            _llm_service_from_key(get(shared_config, "llm.service", "openai"))
+        )
         generic_api_key = get(shared_config, "llm.api_key", "")
         for binding in _bindings():
             raw_value = get(shared_config, binding.key, None)

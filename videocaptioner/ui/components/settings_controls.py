@@ -21,24 +21,21 @@ from PyQt5.QtWidgets import (
 from qfluentwidgets import (
     ComboBox,
     EditableComboBox,
-    PrimaryPushButton,
-    PushButton,
     ScrollArea,
     SwitchButton,
 )
 
-from videocaptioner.ui.common.app_icons import AppIcon, apply_button_icon
 from videocaptioner.ui.common.config import cfg
 from videocaptioner.ui.common.settings_state import SettingField
 from videocaptioner.ui.common.theme_tokens import app_palette, is_dark_theme, rgba
-from videocaptioner.ui.components.workbench import AppLineEdit, apply_font
+from videocaptioner.ui.components.workbench import AppLineEdit, WorkbenchButton, apply_font
 
 CONTROL_WIDTH = 246
-CONTROL_HEIGHT = 46
+CONTROL_HEIGHT = 42
 SHORT_CONTROL_WIDTH = 112
 SLIDER_WIDTH = 190
-ROW_MIN_HEIGHT = 76
-ROW_VERTICAL_PADDING = 12
+ROW_MIN_HEIGHT = 68
+ROW_VERTICAL_PADDING = 11
 
 
 def _bind_config_value(widget: QWidget, config_item: SettingField, handler: Callable[[Any], None]) -> None:
@@ -79,7 +76,6 @@ class SettingsShell(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)  # type: ignore[arg-type]
         self._pages: dict[str, SettingsPage] = {}
         self._nav_buttons: dict[str, QPushButton] = {}
-        self._back_button_hovered = False
 
         self.rootLayout = QHBoxLayout(self)
         self.rootLayout.setContentsMargins(0, 0, 0, 0)
@@ -92,24 +88,15 @@ class SettingsShell(QWidget):
         self.sidebarLayout.setContentsMargins(12, 18, 12, 18)
         self.sidebarLayout.setSpacing(12)
 
-        self.backButton = QPushButton(self.tr("返回应用"), self.sidebar)
-        self.backButton.setObjectName("settingsBackButton")
-        self.backButton.setFixedHeight(38)
-        self.backButton.setCursor(Qt.PointingHandCursor)  # type: ignore[arg-type]
-        self.backButton.installEventFilter(self)
-        apply_button_icon(self.backButton, AppIcon.ARROW_LEFT, 17)
-        self.backButton.clicked.connect(self.backRequested)
-        apply_font(self.backButton, 14, 720)
-
+        # 弹窗里不再用左侧「返回应用」——关闭统一走右上角 X / Esc / 点遮罩
         self.navTitle = QLabel(self.tr("设置"), self.sidebar)
         self.navTitle.setObjectName("settingsNavTitle")
-        apply_font(self.navTitle, 12, 820)
+        apply_font(self.navTitle, 13, 820)
 
         self.navLayout = QVBoxLayout()
         self.navLayout.setContentsMargins(0, 0, 0, 0)
         self.navLayout.setSpacing(5)
 
-        self.sidebarLayout.addWidget(self.backButton)
         self.sidebarLayout.addWidget(self.navTitle)
         self.sidebarLayout.addLayout(self.navLayout)
         self.sidebarLayout.addStretch(1)
@@ -120,17 +107,6 @@ class SettingsShell(QWidget):
         self.rootLayout.addWidget(self.sidebar)
         self.rootLayout.addWidget(self.stack, 1)
         self.syncStyle()
-
-    def eventFilter(self, watched, event):  # noqa: N802
-        if watched is self.backButton and event.type() in {QEvent.Enter, QEvent.Leave}:
-            self._back_button_hovered = event.type() == QEvent.Enter
-            self._sync_back_button_icon()
-        return super().eventFilter(watched, event)
-
-    def _sync_back_button_icon(self) -> None:
-        palette = app_palette()
-        color = palette.accent if self._back_button_hovered else palette.muted
-        apply_button_icon(self.backButton, AppIcon.ARROW_LEFT, 17, color=color)
 
     def addPage(self, key: str, title: str) -> "SettingsPage":  # noqa: N802
         page = SettingsPage(title, self.stack)
@@ -182,7 +158,7 @@ class SettingsShell(QWidget):
             }}
             QFrame#settingsSidebar {{
                 background: {sidebar_bg};
-                border-right: 1px solid {palette.line_soft};
+                border: none;
             }}
             QLabel#settingsNavTitle {{
                 color: {palette.subtle};
@@ -191,30 +167,16 @@ class SettingsShell(QWidget):
                 margin-top: 2px;
                 margin-bottom: 2px;
             }}
-            QPushButton#settingsBackButton {{
-                color: {palette.muted};
-                background: transparent;
-                border: none;
-                border-radius: 0;
-                padding: 0 10px 0 7px;
-                text-align: left;
-                font-size: 14px;
-                font-weight: 720;
-            }}
-            QPushButton#settingsBackButton:hover {{
-                color: {palette.accent};
-                background: transparent;
-            }}
             QPushButton#settingsNavButton {{
-                min-height: 44px;
+                min-height: 42px;
                 border: none;
                 border-radius: 10px;
-                padding: 0 12px;
+                padding: 0 14px;
                 text-align: left;
                 color: {palette.muted};
                 background: transparent;
                 font-size: 15px;
-                font-weight: 760;
+                font-weight: bold;
             }}
             QPushButton#settingsNavButton:hover {{
                 color: {palette.text};
@@ -230,7 +192,6 @@ class SettingsShell(QWidget):
             }}
             """
         )
-        self._sync_back_button_icon()
         for page in self._pages.values():
             page.syncStyle()
 
@@ -765,13 +726,10 @@ class BoundFloatSlider(QWidget):
         BoundSlider.syncStyle(self)  # type: ignore[misc]
 
 
-def make_button(text: str, primary: bool = False, parent=None) -> PushButton:
-    button = PrimaryPushButton(text, parent) if primary else PushButton(text, parent)
-    button.setObjectName("settingsButton")
-    button.setProperty("settingsPrimary", primary)
+def make_button(text: str, primary: bool = False, parent=None) -> WorkbenchButton:
+    """设置页操作按钮：统一用第一方 WorkbenchButton（弃 qfluent PushButton），与全站按钮一致。"""
+    button = WorkbenchButton(text, None, primary=primary, height=CONTROL_HEIGHT, parent=parent)
     button.setMinimumWidth(SHORT_CONTROL_WIDTH)
-    button.setFixedHeight(CONTROL_HEIGHT)
-    _apply_button_style(button, primary)
     return button
 
 
@@ -906,7 +864,7 @@ def _apply_value_label_style(label: QWidget) -> None:
                 border: 1px solid {palette.line_soft};
                 border-radius: 9px;
             padding: 0 12px;
-            font-weight: 720;
+            font-weight: bold;
         }}
         """
     )
@@ -929,7 +887,7 @@ def _apply_control_style(widget: QWidget) -> None:
             border: 1px solid {palette.line_soft};
             border-radius: 9px;
             padding: 0 12px;
-            font-weight: 720;
+            font-weight: bold;
         }}
         QWidget#settingsControl:hover,
         ComboBox#settingsControl:hover,
@@ -965,7 +923,7 @@ def _apply_button_style(button: QWidget, primary: bool) -> None:
             border: 1px solid {border};
             border-radius: 9px;
             padding: 0 14px;
-            font-weight: 760;
+            font-weight: bold;
         }}
         QPushButton#settingsButton:hover {{
             background: {palette.accent_soft if not primary else palette.accent};

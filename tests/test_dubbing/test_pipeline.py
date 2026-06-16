@@ -89,6 +89,42 @@ def test_segment_cache_reused_across_runs(tmp_path, monkeypatch, isolated_tts_ca
     assert any(isolated_tts_cache.iterdir())
 
 
+def test_stretch_to_fit_slows_short_speech_by_default(tmp_path, monkeypatch, isolated_tts_cache):
+    """默认把短于槽位的配音放慢拉伸到原时长；关闭后保持原速不调速。"""
+    srt = tmp_path / "input.srt"
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "videocaptioner.core.dubbing.pipeline.create_speech_synthesizer",
+        lambda _config: FakeSynthesizer(),
+    )
+    factors: list[float] = []
+
+    def fake_change_tempo(src, out, factor):
+        factors.append(factor)
+        AudioSegment.silent(duration=max(1, int(350 / factor)), frame_rate=24000).export(
+            out, format="wav"
+        )
+
+    monkeypatch.setattr(
+        "videocaptioner.core.dubbing.pipeline.change_tempo", fake_change_tempo
+    )
+    base = dict(provider="gemini", api_key="t", base_url="", model="m", voice="Kore")
+
+    # 默认 stretch_to_fit=True：350ms 配音 < ~920ms 槽位 → 放慢（factor<1）拉伸
+    DubbingPipeline(DubbingConfig(**base)).run(
+        str(srt), str(tmp_path / "a.wav"), work_dir=str(tmp_path / "w1")
+    )
+    assert factors, "短配音未被拉伸"
+    assert all(f < 1.0 for f in factors), factors
+
+    # 关闭后短配音保持原速，不调用 change_tempo
+    factors.clear()
+    DubbingPipeline(DubbingConfig(**base, stretch_to_fit=False)).run(
+        str(srt), str(tmp_path / "b.wav"), work_dir=str(tmp_path / "w2")
+    )
+    assert not factors, f"关闭拉伸后不应调速: {factors}"
+
+
 def test_segment_cache_key_includes_synthesis_config(tmp_path, monkeypatch):
     """音色/速度等配置变化必须使缓存失效（曾因漏 speed/gain 复用旧音频）。"""
     srt = tmp_path / "input.srt"

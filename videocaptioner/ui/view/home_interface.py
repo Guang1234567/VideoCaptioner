@@ -104,7 +104,7 @@ class HomeInterface(QWidget):
                 background: transparent;
                 border: none;
                 min-height: 36px;
-                font-weight: 760;
+                font-weight: bold;
             }}
             SegmentedWidget#homePivot QPushButton:hover,
             SegmentedWidget#homePivot QPushButton:checked {{

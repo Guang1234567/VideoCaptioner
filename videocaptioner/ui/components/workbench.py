@@ -45,11 +45,20 @@ from PyQt5.QtGui import (
     QLinearGradient,
     QPainter,
     QPainterPath,
+    QPalette,
     QPen,
     QPixmap,
     QRadialGradient,
 )
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 from qfluentwidgets import Action, RoundMenu
 
 from videocaptioner.core.entities import (
@@ -448,6 +457,11 @@ class WorkbenchButton(QFrame):
             Qt.PointingHandCursor if enabled else Qt.ArrowCursor  # type: ignore[arg-type]
         )
         self.syncStyle()
+
+    def click(self):
+        """QPushButton 兼容：供 .click() 直接触发（测试/脚本/程序化调用）。"""
+        if self.isEnabled():
+            self.clicked.emit()
 
     def mousePressEvent(self, event):
         if self.isEnabled() and event.button() == Qt.LeftButton:  # type: ignore[attr-defined]
@@ -1054,6 +1068,14 @@ class SelectableCard(QFrame):
     def isActive(self) -> bool:
         return self._active
 
+    def setBadge(self, text: str, level: str = "neutral"):
+        """卡片右侧状态胶囊（如配音提供商的「免 Key / 需 Key / 可克隆」）。"""
+        if getattr(self, "_badge", None) is None:
+            self._badge = StatusPill(text, level, self)
+            self.layout().addWidget(self._badge, 0, Qt.AlignVCenter)  # type: ignore[arg-type]
+        else:
+            self._badge.setState(text, level)
+
     def mousePressEvent(self, event):
         if self.isEnabled() and event.button() == Qt.LeftButton:  # type: ignore[attr-defined]
             self.clicked.emit(self.key)
@@ -1293,6 +1315,81 @@ class AppLineEdit(QLineEdit):
         self.update()
 
 
+class AppTextEdit(QPlainTextEdit):
+    """第一方多行输入框：与 AppLineEdit 同一套圆角 + 聚焦/悬浮主题色描边，去掉 qfluent 下划线。
+
+    文稿提示、配音文案、克隆参考文本等多行输入统一用它。"""
+
+    def __init__(self, text: str = "", parent=None, min_height: int = 96, radius: int = 12):
+        super().__init__(parent)
+        self.setObjectName("appTextEdit")
+        self._radius = radius
+        self.setFrameShape(QFrame.NoFrame)  # type: ignore[attr-defined]
+        self.setMinimumHeight(min_height)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)  # type: ignore[attr-defined]
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # type: ignore[attr-defined]
+        # 文本内边距走 documentMargin：QSS 的 padding 到不了 QPlainTextEdit 文本区
+        # （文字会贴边），documentMargin 才能稳定把文字从边缘推开。对齐设计稿 .textarea 的 ~14px。
+        self.document().setDocumentMargin(12)
+        apply_font(self, 14, 720)  # 只设一次；调用方可在构造后用 apply_font 覆盖字号
+        if text:
+            self.setPlainText(text)
+        self.syncStyle()
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.syncStyle()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.syncStyle()
+
+    def syncStyle(self):
+        palette = app_palette()
+        if self.hasFocus():
+            border = palette.accent
+        elif self.underMouse() and self.isEnabled():
+            border = palette.accent_border
+        else:
+            border = palette.line_soft
+        # 文本区背景/文字色走 QPalette：QSS 的 background 在某些父级样式表下到不了
+        # QPlainTextEdit 的 viewport（会露出 Qt 默认白底），调色板直控更可靠。
+        # 用 panel_deep（比 panel 更暗）做下沉式输入框，对齐设计稿 .textarea 的深色底，
+        # 避免用 field（比面板更亮）时输入框显得「浮起/和面板分不清」。
+        pal = self.palette()
+        pal.setColor(QPalette.Base, QColor(palette.panel_deep))
+        pal.setColor(QPalette.Text, QColor(palette.text))
+        self.setPalette(pal)
+        self.setStyleSheet(
+            f"""
+            QPlainTextEdit#appTextEdit {{
+                background: {palette.panel_deep};
+                border: 1px solid {border};
+                border-radius: {self._radius}px;
+                color: {palette.text};
+                selection-background-color: {rgba(palette.accent, 0.35)};
+                selection-color: {palette.text};
+            }}
+            QScrollBar:vertical {{
+                background: transparent; width: 6px; margin: 4px 2px; border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {palette.line}; border-radius: 3px; min-height: 28px;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            """
+        )
+        self.update()
+
+
 class CompactButton(QFrame):
     """紧凑按钮（.btn.compact）：32 高、图标 + 文案，表格头部操作用。"""
 
@@ -1494,11 +1591,16 @@ class PillSelect(QFrame):
         self.setFixedHeight(30)
         self.setCursor(Qt.PointingHandCursor)  # type: ignore[arg-type]
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 0, 14, 0)
+        layout.setContentsMargins(13, 0, 10, 0)
+        layout.setSpacing(6)
         self.textLabel = QLabel(self)
         self.textLabel.setObjectName("wbPillSelectText")
         apply_font(self.textLabel, 13, 780)
         layout.addWidget(self.textLabel)
+        # 常驻下拉箭头：让取值胶囊一眼可辨「可点选」，区别于只读 InfoChip 元数据胶囊
+        self.chevronLabel = QLabel(self)
+        self.chevronLabel.setFixedSize(14, 14)
+        layout.addWidget(self.chevronLabel, 0, Qt.AlignVCenter)  # type: ignore[arg-type]
         self.syncStyle()
 
     def setItems(self, items: list[str], current: str | None = None):
@@ -1552,17 +1654,17 @@ class PillSelect(QFrame):
     def paintEvent(self, event):
         palette = app_palette()
         hovered = self.underMouse() and self.isEnabled()
-        draw_rounded_surface(
-            self,
-            palette.control,
-            rgba(palette.accent, 0.6) if hovered else palette.line,
-            15,
-        )
+        # 静息态就用主题色描边（而非 line），与只读 InfoChip 拉开差异 → 用户知道这是可点控件
+        border = rgba(palette.accent, 0.75 if hovered else 0.42) if self.isEnabled() else palette.line
+        draw_rounded_surface(self, palette.control, border, 15)
         super().paintEvent(event)
 
     def syncStyle(self):
         palette = app_palette()
-        fg = palette.muted if self.isEnabled() else palette.subtle
+        fg = palette.text if self.isEnabled() else palette.subtle
+        self.chevronLabel.setPixmap(
+            icon_pixmap(AppIcon.CHEVRON_DOWN, fg if self.isEnabled() else palette.subtle, 14)
+        )
         self.update()
         self.setStyleSheet(
             f"""

@@ -67,7 +67,7 @@ class FormGroup(QWidget):
             QLabel#formGroupTitle {{
                 color: {palette.text};
                 font-size: 17px;
-                font-weight: 700;
+                font-weight: bold;
                 background: transparent;
             }}
             QFrame#formCardBox {{
@@ -177,7 +177,7 @@ class PushFormCard(FormCard):
                 background: {palette.field};
                 border: 1px solid {palette.line_soft};
                 border-radius: 8px;
-                font-weight: 760;
+                font-weight: bold;
             }}
             PushButton:hover {{
                 border-color: {palette.accent};

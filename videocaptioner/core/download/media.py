@@ -42,7 +42,7 @@ CancelCheck = Callable[[], None]
 def sanitize_filename(name: str, replacement: str = "_") -> str:
     """清理文件名：非法字符、控制符、结尾空格点、超长与 Windows 保留名。"""
     sanitized = re.sub(r'[<>:"/\\|?*]', replacement, name)
-    sanitized = re.sub(r"[\0-\31]", "", sanitized).rstrip(" .")
+    sanitized = re.sub(r"[\x00-\x1f]", "", sanitized).rstrip(" .")
     if len(sanitized) > 255:
         base, ext = os.path.splitext(sanitized)
         sanitized = base[: 255 - len(ext)] + ext
@@ -224,7 +224,7 @@ class MediaDownloader:
             self._cancel_check()
 
             video_path = Path(ydl.prepare_filename(info))
-            subtitle_path = resolve_downloaded_subtitle(info, video_path, language)
+            subtitle_path = resolve_downloaded_subtitle(info, video_path, language, proxy)
             logger.info("下载完成: %s (字幕: %s)", video_path, subtitle_path)
             return (
                 str(video_path) if video_path.exists() else None,
@@ -233,7 +233,7 @@ class MediaDownloader:
 
 
 def resolve_downloaded_subtitle(
-    info: dict, video_path: Path, language: Optional[str]
+    info: dict, video_path: Path, language: Optional[str], proxy: Optional[str] = None
 ) -> Optional[str]:
     """取与视频同语言的字幕 sidecar；语言不匹配时用字幕直链重下一次。
 
@@ -273,8 +273,14 @@ def resolve_downloaded_subtitle(
     downloaded.unlink(missing_ok=True)
     if not link:
         return None
+    # 与引擎同源的按站代理：YouTube 等需走代理，B 站强制直连（proxy==""）。
     try:
-        text = requests.get(link, timeout=30).text
+        with requests.Session() as session:
+            if proxy:
+                session.proxies.update({"http": proxy, "https": proxy})
+            elif proxy == "":
+                session.trust_env = False  # 忽略环境代理，强制直连
+            text = session.get(link, timeout=30).text
     except requests.RequestException:
         logger.warning("按语言重下字幕失败: %s", link)
         return None
@@ -310,12 +316,18 @@ def probe_summary(info: dict) -> dict:
     heights = sorted(
         {
             f["height"]
+            # 只排除明确的纯音频流（vcodec == "none"）；缺省 vcodec 的合流也保留——
+            # 某些 extractor 在 progressive/muxed 格式上不写 vcodec，旧逻辑会误删导致清晰度为空
             for f in info.get("formats") or []
-            if f.get("height") and f.get("vcodec") not in (None, "none")
+            if f.get("height") and f.get("vcodec") != "none"
         },
         reverse=True,
     )
-    summary["qualities"] = [h for h in heights if h >= 144]
+    qualities = [h for h in heights if h >= 144]
+    # 无 formats 数组 / 无 height 的源（直链、部分 HLS）：兜底用顶层分辨率给出单档，避免清晰度全空
+    if not qualities and info.get("height"):
+        qualities = [int(info["height"])]
+    summary["qualities"] = qualities
     summary["has_subtitle"] = bool(info.get("subtitles"))
     return summary
 

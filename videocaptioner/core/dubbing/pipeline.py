@@ -179,11 +179,22 @@ class DubbingPipeline:
         if self.config.fit_mode == "none" or not segment.target_duration_ms:
             return source
         target_ms = max(100, segment.target_duration_ms - self.config.target_padding_ms)
-        if segment.synthesized_duration_ms <= target_ms:
-            segment.speed_factor = 1.0
-            return source
-        required = segment.synthesized_duration_ms / target_ms
-        factor = min(required, self.config.max_speed)
+        synth_ms = segment.synthesized_duration_ms
+        if synth_ms <= target_ms:
+            # 短于目标：默认放慢拉伸到原时长（factor<1 → atempo 拉长），下限 min_speed。
+            if not self.config.stretch_to_fit:
+                segment.speed_factor = 1.0
+                return source
+            factor = max(synth_ms / target_ms, self.config.min_speed)
+            if factor >= 0.999:  # 已基本贴合，无需处理
+                segment.speed_factor = 1.0
+                return source
+            segment.speed_factor = factor
+            out_path = work_dir / f"{segment.index:04d}_fit.wav"
+            change_tempo(source, str(out_path), factor)
+            return str(out_path)
+        # 长于目标：加速压缩，上限 max_speed。
+        factor = min(synth_ms / target_ms, self.config.max_speed)
         segment.speed_factor = factor
         out_path = work_dir / f"{segment.index:04d}_fit.wav"
         change_tempo(source, str(out_path), factor)

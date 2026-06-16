@@ -3,657 +3,643 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>VideoCaptioner 配音页 D1 优化稿</title>
+  <title>VideoCaptioner 配音设计</title>
   <style>
     :root {
-      --bg: #1f2020;
-      --chrome: #191a1a;
-      --panel: #292b2b;
-      --panel-2: #323535;
-      --panel-3: #3b3e3d;
-      --line: #454948;
-      --line-soft: #363a39;
-      --text: #f4f6f5;
-      --muted: #b8bfbc;
-      --subtle: #8f9793;
-      --brand: #00f0a0;
-      --brand-soft: rgba(0, 240, 160, .11);
-      --brand-line: rgba(0, 240, 160, .46);
-      --warning: #f0bd58;
-      --radius: 8px;
-      --shadow: 0 22px 70px rgba(0, 0, 0, .34);
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", Segoe UI, sans-serif;
+      --bg: #0b1110;
+      --app: #151b19;
+      --chrome: #101614;
+      --panel: #1d2522;
+      --panel2: #202a26;
+      --field: #25302c;
+      --line: #34413d;
+      --line2: #2b3632;
+      --text: #f4f7f5;
+      --muted: #aab7b2;
+      --subtle: #7f8d88;
+      --accent: #07f08a;
+      --soft: rgba(7, 240, 138, .13);
+      --warn: #e8c75c;
+      --warn-soft: rgba(232, 199, 92, .14);
+      --danger: #ff806f;
+      --danger-soft: rgba(255, 128, 111, .14);
+      --shadow: 0 28px 80px rgba(0, 0, 0, .28);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
     }
 
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
-      min-height: 100vh;
-      background: #151616;
+      min-width: 1520px;
+      background:
+        radial-gradient(circle at 74% -10%, rgba(7, 240, 138, .12), transparent 34%),
+        var(--bg);
       color: var(--text);
       font-family: var(--font);
       letter-spacing: 0;
     }
+    h1, h2, h3, p { margin: 0; }
+    button, textarea, input { font: inherit; }
+    button { border: 0; color: inherit; background: transparent; }
 
-    button, textarea {
-      font: inherit;
-    }
-
-    button {
-      cursor: default;
-    }
-
-    .stage {
-      min-height: 100vh;
-      padding: 28px;
-    }
-
-    .intro {
-      max-width: 1480px;
-      margin: 0 auto 22px;
+    .board { width: 1520px; margin: 0 auto; padding: 34px 0 72px; }
+    .board-head, .state-title {
       display: flex;
       justify-content: space-between;
+      align-items: flex-end;
       gap: 24px;
-      align-items: end;
+      padding: 0 40px;
+      margin-bottom: 22px;
     }
-
-    .intro h1 {
-      margin: 0 0 8px;
-      font-size: 30px;
-      line-height: 1.16;
-    }
-
-    .intro p {
-      margin: 0;
-      max-width: 840px;
+    .board-head h1 { font-size: 32px; line-height: 1.15; }
+    .board-head p {
+      margin-top: 10px;
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.7;
+      font-size: 15px;
+      font-weight: 680;
     }
+    .state-title { align-items: center; margin: 34px 0 12px; }
+    .state-title h2 { font-size: 22px; }
+    .state-title span { color: var(--subtle); font-weight: 760; }
 
-    .design-note {
-      flex: 0 0 auto;
-      min-height: 40px;
-      padding: 0 14px;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius);
-      background: #202222;
-      color: var(--muted);
-      font-size: 13px;
-      white-space: nowrap;
-    }
-
-    .note-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--brand);
-      box-shadow: 0 0 0 4px var(--brand-soft);
-    }
-
-    .app {
-      max-width: 1480px;
-      min-height: 860px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: 68px 1fr;
+    .client {
+      position: relative;
+      width: 1440px;
+      height: 900px;
+      margin: 0 40px;
       overflow: hidden;
-      border: 1px solid #303332;
-      border-radius: 18px;
-      background: var(--bg);
+      border: 1px solid rgba(210, 230, 220, .14);
+      border-radius: 14px;
+      background: var(--app);
       box-shadow: var(--shadow);
     }
-
+    .titlebar {
+      position: absolute;
+      inset: 0 0 auto;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid var(--line2);
+      background: #141917;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 820;
+    }
+    .dots { position: absolute; left: 24px; display: flex; gap: 12px; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; }
+    .red { background: #ff5f57; }
+    .yellow { background: #febc2e; }
+    .green { background: #28c840; }
     .sidebar {
-      padding: 20px 12px;
+      position: absolute;
+      top: 48px;
+      left: 0;
+      bottom: 0;
+      width: 76px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
+      padding: 26px 0 20px;
+      border-right: 1px solid var(--line2);
       background: var(--chrome);
-      border-right: 1px solid #262928;
     }
-
-    .side-btn {
-      width: 42px;
-      height: 42px;
-      border: 0;
-      border-radius: var(--radius);
+    .spacer { flex: 1; }
+    .nav {
+      position: relative;
+      width: 44px;
+      height: 44px;
       display: grid;
       place-items: center;
-      color: #d7ddda;
-      background: transparent;
+      border-radius: 12px;
     }
-
-    .side-btn.active {
-      color: var(--brand);
-      background: #252827;
-      box-shadow: inset 3px 0 0 var(--brand);
+    .nav.active { background: rgba(7, 240, 138, .16); }
+    .nav.active::before {
+      display: none;
     }
-
-    .icon {
-      width: 22px;
-      height: 22px;
+    .ico { width: 19px; height: 19px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .ico img {
+      width: 100%;
+      height: 100%;
       display: block;
-      fill: none;
-      stroke: currentColor;
-      stroke-width: 2.1;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+      filter: brightness(0) saturate(100%) invert(78%) sepia(11%) saturate(248%) hue-rotate(107deg) brightness(88%) contrast(85%);
+    }
+    .active .ico img,
+    .provider.active .ico img,
+    .chip.accent .ico img {
+      filter: brightness(0) saturate(100%) invert(72%) sepia(88%) saturate(1944%) hue-rotate(96deg) brightness(104%) contrast(100%);
+    }
+    .button.primary .ico img {
+      filter: brightness(0) saturate(100%) invert(6%) sepia(20%) saturate(1052%) hue-rotate(106deg) brightness(95%) contrast(96%);
     }
 
-    .main {
-      min-width: 0;
-      padding: 34px 42px 42px;
+    .app {
+      position: absolute;
+      inset: 48px 0 0 76px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 16px;
+      padding: 28px 42px 30px;
+      background:
+        radial-gradient(circle at 88% 0%, rgba(7, 240, 138, .08), transparent 28%),
+        var(--app);
     }
-
-    .topbar {
-      min-height: 48px;
-      margin-bottom: 22px;
+    .head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 22px;
+      gap: 20px;
     }
-
-    .topbar.simple {
-      justify-content: flex-start;
-    }
-
-    .page-title {
-      margin: 0;
-      font-size: 34px;
-      line-height: 1.12;
-    }
-
-    .subline {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .spacer { flex: 1; }
-
-    .btn {
-      height: 40px;
-      padding: 0 14px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
+    .head h2 { font-size: 34px; line-height: 1.12; }
+    .head p { margin-top: 8px; color: var(--muted); font-size: 15px; font-weight: 680; }
+    .head-actions, .row-actions, .chips { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .button {
+      height: 42px;
+      min-width: 118px;
+      padding: 0 16px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      color: var(--text);
-      background: var(--panel-3);
-      font-weight: 700;
-    }
-
-    .btn.primary {
-      border-color: var(--brand);
-      color: #061810;
-      background: var(--brand);
-      font-weight: 850;
-    }
-
-    .btn.soft {
-      border-color: var(--brand-line);
-      color: var(--brand);
-      background: var(--brand-soft);
-    }
-
-    .btn.icon-btn {
-      width: 40px;
-      padding: 0;
-      flex: 0 0 40px;
-    }
-
-    .provider-row {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .provider {
-      min-height: 88px;
-      padding: 15px 16px;
+      gap: 9px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
-      display: grid;
-      grid-template-rows: 24px 1fr;
-      gap: 8px;
-      background: var(--panel);
-    }
-
-    .provider.active {
-      border-color: var(--brand);
-      background: linear-gradient(180deg, rgba(0, 240, 160, .105), rgba(0, 240, 160, .035)), var(--panel);
-    }
-
-    .provider-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .provider strong {
+      border-radius: 12px;
+      background: var(--field);
+      color: var(--text);
       font-size: 15px;
-    }
-
-    .provider p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .badge {
-      height: 24px;
-      padding: 0 10px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      color: #d9dfdc;
-      background: #4a4d4c;
-      font-size: 12px;
-      font-weight: 750;
-      line-height: 24px;
+      font-weight: 850;
       white-space: nowrap;
     }
-
-    .badge.brand {
+    .button.primary {
+      border-color: transparent;
+      background: var(--accent);
       color: #061810;
-      background: var(--brand);
+      box-shadow: 0 16px 36px rgba(7, 240, 138, .18);
     }
-
-    .badge.warning {
-      color: #d9dfdc;
-      background: #4a4d4c;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(740px, 1fr) 386px;
-      gap: 18px;
-      align-items: start;
-    }
-
-    .filter-bar {
-      min-height: 60px;
-      margin-bottom: 14px;
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 10px;
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius);
-      background: var(--panel);
-    }
-
-    .filter-label {
-      color: var(--subtle);
-      font-size: 12px;
-      font-weight: 800;
-      margin-right: 2px;
-    }
-
-    .filter-btn {
-      height: 34px;
+    .button.ghost { min-width: 0; color: var(--muted); background: rgba(255, 255, 255, .025); }
+    .button.danger { color: #ffd2cd; border-color: rgba(255, 128, 111, .46); background: var(--danger-soft); }
+    .pill, .status {
+      min-height: 30px;
       padding: 0 12px;
-      border: 1px solid #3c403f;
-      border-radius: 7px;
-      color: var(--muted);
-      background: #272a29;
-      font-weight: 750;
-    }
-
-    .filter-btn.active {
-      border-color: var(--brand);
-      color: #071912;
-      background: var(--brand);
-    }
-
-    .table {
-      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: var(--panel);
-    }
-
-    .voice-row {
-      height: 74px;
-      display: grid;
-      grid-template-columns: 42px minmax(360px, 1fr) 170px;
-      column-gap: 16px;
-      align-items: center;
-      padding: 0 16px;
-      border-bottom: 1px solid #383b3a;
-    }
-
-    .voice-row:last-child {
-      border-bottom: 0;
-    }
-
-    .voice-row.header {
-      height: 44px;
-      color: var(--subtle);
-      background: #222424;
-      font-size: 12px;
-      font-weight: 800;
-      align-items: center;
-    }
-
-    .voice-row.selected {
-      background: rgba(0, 240, 160, .08);
-      box-shadow: inset 3px 0 0 var(--brand);
-    }
-
-    .mic {
-      width: 38px;
-      height: 38px;
-      border: 1px solid #39403d;
-      border-radius: 10px;
-      display: grid;
-      place-items: center;
-      color: var(--brand);
-      background: #242727;
-    }
-
-    .mic .icon {
-      width: 20px;
-      height: 20px;
-    }
-
-    .voice-title {
-      margin: 0 0 4px;
-      font-size: 15px;
-      line-height: 18px;
-    }
-
-    .muted {
+      border-radius: 999px;
+      background: rgba(255,255,255,.03);
       color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      white-space: nowrap;
     }
+    .status.ok, .pill.ok { color: var(--accent); border-color: rgba(7,240,138,.55); background: var(--soft); }
+    .status.warn, .pill.warn { color: var(--warn); border-color: rgba(232,199,92,.5); background: var(--warn-soft); }
 
-    .voice-desc {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 16px;
-    }
-
-    .voice-row > .row {
-      justify-content: flex-end;
-    }
-
-    .voice-row > .row .btn:not(.icon-btn) {
-      width: 96px;
-      padding-left: 0;
-      padding-right: 0;
-    }
-
-    .right {
+    .providers {
       display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .provider {
+      min-height: 62px;
+      padding: 13px 15px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 14px;
-      align-content: start;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,.035);
+    }
+    .provider.active {
+      border-color: rgba(7,240,138,.72);
+      background: linear-gradient(90deg, rgba(7,240,138,.12), rgba(7,240,138,.035));
+    }
+    .provider strong { display: block; font-size: 17px; line-height: 1.15; }
+    .provider em {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-style: normal;
+      font-size: 12px;
+      font-weight: 720;
     }
 
+    .work {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+    }
     .panel {
+      min-width: 0;
+      min-height: 0;
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 18px;
       background: var(--panel);
+      overflow: hidden;
     }
-
-    .sample {
-      padding: 18px;
-      display: grid;
-      gap: 14px;
-      min-height: 378px;
-    }
-
-    .section-title {
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .section-title h3 {
-      margin: 0;
-      font-size: 18px;
-      line-height: 1.2;
-    }
-
-    .section-title small {
-      color: var(--subtle);
-      font-size: 12px;
-    }
-
-    .textarea {
-      width: 100%;
-      height: 176px;
-      padding: 14px;
-      resize: none;
-      outline: none;
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      color: var(--text);
-      background: #202222;
-      line-height: 1.6;
-    }
-
-    .sample-meta {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--subtle);
-      font-size: 12px;
-    }
-
-    .player {
-      height: 72px;
-      padding: 0 14px;
-      border: 1px solid var(--line-soft);
-      border-radius: var(--radius);
+    .panel-head {
+      min-height: 64px;
+      padding: 16px 18px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 14px;
-      background: #202222;
+      border-bottom: 1px solid var(--line2);
     }
-
-    .wave {
-      height: 32px;
-      flex: 1;
+    .panel-head h3 { font-size: 22px; }
+    .segment {
+      min-height: 38px;
+      padding: 4px;
       display: flex;
       align-items: center;
       gap: 4px;
-      opacity: .82;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--field);
     }
+    .segment button {
+      height: 30px;
+      min-width: 58px;
+      padding: 0 12px;
+      border-radius: 8px;
+      color: var(--muted);
+      font-weight: 840;
+      font-size: 13px;
+    }
+    .segment button.active { color: #061810; background: var(--accent); }
 
-    .wave i {
-      width: 3px;
+    .voice-list {
+      height: calc(100% - 64px);
+      overflow: auto;
+      padding: 12px;
+    }
+    .voice-list::-webkit-scrollbar { width: 8px; }
+    .voice-list::-webkit-scrollbar-thumb { background: #3f4b46; border-radius: 8px; }
+    .voice-row {
+      min-height: 78px;
+      margin-bottom: 8px;
+      padding: 14px 14px 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      border: 1px solid var(--line2);
+      border-radius: 14px;
+      background: rgba(255,255,255,.025);
+    }
+    .voice-row.active {
+      border-color: rgba(7,240,138,.7);
+      background: rgba(7,240,138,.09);
+    }
+    .voice-row strong { display: block; font-size: 18px; line-height: 1.2; }
+    .voice-row p { margin-top: 6px; color: var(--muted); font-size: 13px; font-weight: 700; }
+    .voice-meta { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .tag {
+      height: 24px;
+      padding: 0 9px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--brand);
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 820;
     }
+    .voice-actions { display: flex; gap: 8px; align-items: center; }
+    .mini {
+      height: 36px;
+      min-width: 80px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--field);
+      color: var(--text);
+      font-weight: 850;
+    }
+    .mini.primary { color: var(--accent); border-color: rgba(7,240,138,.55); background: var(--soft); }
 
-    .wave i:nth-child(1) { height: 8px; opacity: .45; }
-    .wave i:nth-child(2) { height: 18px; opacity: .65; }
-    .wave i:nth-child(3) { height: 12px; opacity: .55; }
-    .wave i:nth-child(4) { height: 25px; opacity: .9; }
-    .wave i:nth-child(5) { height: 15px; opacity: .7; }
-    .wave i:nth-child(6) { height: 10px; opacity: .5; }
-    .wave i:nth-child(7) { height: 22px; opacity: .85; }
-    .wave i:nth-child(8) { height: 13px; opacity: .55; }
-    .wave i:nth-child(9) { height: 28px; opacity: .95; }
-    .wave i:nth-child(10) { height: 16px; opacity: .68; }
-
-    .service {
+    .audition {
       padding: 16px;
       display: grid;
-      gap: 10px;
+      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+      gap: 12px;
     }
-
-    .field {
-      min-height: 40px;
+    .audition .button.primary { width: 100%; align-self: end; }
+    .selected {
+      padding: 16px;
+      border: 1px solid var(--line2);
+      border-radius: 15px;
+      background: rgba(255,255,255,.026);
+    }
+    .selected-top {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .selected h3 { font-size: 22px; line-height: 1.1; }
+    .selected p { margin-top: 7px; color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.45; }
+    .textarea {
+      height: 156px;
+      padding: 14px 15px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      resize: none;
+      background: #18211e;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.55;
+      font-weight: 760;
+      outline: none;
+    }
+    .count { text-align: right; color: var(--subtle); font-size: 13px; font-weight: 760; }
+    .form-list {
+      display: grid;
+      gap: 8px;
+    }
+    .form-row {
+      min-height: 42px;
       padding: 0 12px;
-      border: 1px solid var(--line-soft);
-      border-radius: 7px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      background: #252827;
-    }
-
-    .field span {
+      border: 1px solid var(--line2);
+      border-radius: 12px;
+      background: rgba(255,255,255,.025);
       color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
     }
-
-    @media (max-width: 1180px) {
-      .stage { padding: 18px; }
-      .intro { display: grid; }
-      .app { grid-template-columns: 56px 1fr; }
-      .main { padding: 26px; }
-      .provider-row, .layout { grid-template-columns: 1fr; }
-      .voice-row {
-        grid-template-columns: 42px 1fr;
-        padding: 14px 16px;
-      }
-      .voice-row.header { display: none; }
-      .voice-row > .row { grid-column: 2; }
+    .form-row strong { color: var(--text); font-size: 14px; }
+    .clone-box {
+      padding: 12px;
+      border: 1px solid rgba(7,240,138,.38);
+      border-radius: 15px;
+      background: rgba(7,240,138,.07);
+    }
+    .clone-box h4 { font-size: 16px; margin: 0 0 10px; }
+    .file-line {
+      min-height: 42px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px dashed rgba(170,183,178,.32);
+      border-radius: 12px;
+      color: var(--muted);
+      font-weight: 760;
     }
   </style>
 </head>
 <body>
-  <div class="stage">
-    <header class="intro">
+  <main class="board">
+    <header class="board-head">
       <div>
-        <h1>配音页 D1 优化稿</h1>
-        <p>只保留一个方向：提供商切换、按声线筛选、音色表格、自定义试听文案。去掉搜索、当前任务、生成策略、语言标签和重复提供商列，把页面收敛成“选声音并试听”的干净流程。</p>
+        <h1>配音页重设计</h1>
+        <p>把提供商、音色选择、试听文案和克隆能力收在一张稳定工作台里，按钮和状态不跳位置。</p>
       </div>
-      <div class="design-note"><span class="note-dot"></span><span>D1 refined · ready for PyQt translation</span></div>
+      <span class="pill ok">功能已对齐真实配音页</span>
     </header>
 
-    <main class="app">
+    <div class="state-title">
+      <h2>状态 A：Gemini TTS，选择英文音色并试听</h2>
+      <span>适合常规音色浏览，Key 已配置</span>
+    </div>
+    <article class="client">
+      <div class="titlebar"><div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>卡卡字幕助手 -- VideoCaptioner</div>
       <aside class="sidebar">
-        <button class="side-btn" title="菜单">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
-        </button>
-        <button class="side-btn" title="首页">
-          <svg class="icon" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"></path><path d="M5 10v10h14V10"></path></svg>
-        </button>
-        <button class="side-btn" title="字幕">
-          <svg class="icon" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 10h8M8 14h5"></path></svg>
-        </button>
-        <button class="side-btn active" title="配音">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
-        </button>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/home.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/video.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/subtitle.svg" alt=""></span></div>
+        <div class="nav active"><span class="ico"><img src="../../resource/assets/icons/volume.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/history.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/search.svg" alt=""></span></div>
         <div class="spacer"></div>
-        <button class="side-btn" title="设置">
-          <svg class="icon" viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z"></path><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1.82V22a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 8.6 20a1.65 1.65 0 0 0-1.82-.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1H4a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6V4a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.32.32.69.33 1.07H20a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-.51.93Z"></path></svg>
-        </button>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/github.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/setting.svg" alt=""></span></div>
       </aside>
-
-      <section class="main">
-        <div class="topbar simple">
+      <section class="app">
+        <header class="head">
           <div>
-            <h2 class="page-title">配音</h2>
-            <div class="subline">选择提供商和音色，输入一句自己的试听文案。</div>
+            <h2>配音</h2>
+            <p>选择提供商和音色，先试听一句，再用于字幕视频合成。</p>
           </div>
+          <div class="head-actions">
+            <button class="button ghost"><span class="ico"><img src="../../resource/assets/icons/setting.svg" alt=""></span>配音配置</button>
+            <span class="status ok">Gemini Key 已配置</span>
+          </div>
+        </header>
+        <div class="providers">
+          <button class="provider">
+            <span><strong>Edge 免费配音</strong><em>免 Key，快速生成中文或英文配音</em></span>
+            <span class="pill ok">免 Key</span>
+          </button>
+          <button class="provider active">
+            <span><strong>Gemini TTS</strong><em>英文自然表达更稳定</em></span>
+            <span class="pill ok">可试听</span>
+          </button>
+          <button class="provider">
+            <span><strong>SiliconFlow CosyVoice</strong><em>中文音色，支持参考音频克隆</em></span>
+            <span class="pill">可克隆</span>
+          </button>
         </div>
-
-        <div class="provider-row">
-          <article class="provider active">
-            <div class="provider-head"><strong>Edge 免费配音</strong><span class="badge brand">已选</span></div>
-            <p>免 API Key，适合默认中文/英文快速配音。</p>
-          </article>
-          <article class="provider">
-            <div class="provider-head"><strong>Gemini TTS</strong><span class="badge warning">需 Key</span></div>
-            <p>更自然的英文表达，配置后显示可用音色。</p>
-          </article>
-          <article class="provider">
-            <div class="provider-head"><strong>SiliconFlow CosyVoice</strong><span class="badge warning">需 Key</span></div>
-            <p>支持更丰富音色和克隆，适合高级用户。</p>
-          </article>
-        </div>
-
-        <div class="filter-bar">
-          <span class="filter-label">声线</span>
-          <button class="filter-btn active">全部</button>
-          <button class="filter-btn">女声</button>
-          <button class="filter-btn">男声</button>
-        </div>
-
-        <div class="layout">
-          <div>
-            <div class="table">
-              <div class="voice-row header">
-                <span></span>
-                <span>音色</span>
-                <span>操作</span>
-              </div>
-
-              <div class="voice-row selected">
-                <div class="mic"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
-                <div><h3 class="voice-title">晓晓</h3><div class="voice-desc">清晰自然普通话女声，适合默认字幕配音。</div></div>
-                <div class="row"><button class="btn icon-btn"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button><button class="btn">已选择</button></div>
-              </div>
-
-              <div class="voice-row">
-                <div class="mic"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
-                <div><h3 class="voice-title">云希</h3><div class="voice-desc">年轻自然普通话男声，适合教程和解说。</div></div>
-                <div class="row"><button class="btn icon-btn"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button><button class="btn primary">使用</button></div>
-              </div>
-
-              <div class="voice-row">
-                <div class="mic"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
-                <div><h3 class="voice-title">晓伊</h3><div class="voice-desc">温和明亮普通话女声，适合知识类视频。</div></div>
-                <div class="row"><button class="btn icon-btn"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button><button class="btn primary">使用</button></div>
-              </div>
-
-              <div class="voice-row">
-                <div class="mic"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
-                <div><h3 class="voice-title">Jenny</h3><div class="voice-desc">自然英文女声，适合英文旁白和翻译字幕。</div></div>
-                <div class="row"><button class="btn icon-btn"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button><button class="btn primary">使用</button></div>
-              </div>
-
-              <div class="voice-row">
-                <div class="mic"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></div>
-                <div><h3 class="voice-title">晓佳</h3><div class="voice-desc">粤语女声，适合粤语内容试听。</div></div>
-                <div class="row"><button class="btn icon-btn"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button><button class="btn primary">使用</button></div>
+        <div class="work">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>音色库</h3>
+              <div class="head-actions">
+                <div class="segment" aria-label="音色筛选">
+                  <button class="active">全部</button>
+                  <button>推荐</button>
+                  <button>英文</button>
+                  <button>自然</button>
+                </div>
               </div>
             </div>
-          </div>
-
-          <aside class="right">
-            <section class="panel sample">
-              <div class="section-title">
-                <h3>试听文案</h3>
-                <small>用户可自行输入</small>
+            <div class="voice-list">
+              <div class="voice-row active">
+                <div>
+                  <strong>Achird</strong>
+                  <p>友好自然的英文表达，适合课程旁白和解释型内容。</p>
+                  <div class="voice-meta"><span class="tag">英文</span><span class="tag">推荐</span><span class="tag">需 Key</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini primary">试听</button></div>
               </div>
-              <textarea class="textarea">你好，这是我想用于测试的配音文案。请用自然清晰的语气朗读这一句话。</textarea>
-              <div class="sample-meta"><span>建议 10-80 字，试听更快</span><span>43 字</span></div>
-              <div class="player">
-                <button class="btn icon-btn primary"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg></button>
-                <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="voice-row">
+                <div>
+                  <strong>Kore</strong>
+                  <p>清晰稳定的自然英文，更适合长段字幕配音。</p>
+                  <div class="voice-meta"><span class="tag">英文</span><span class="tag">推荐</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
               </div>
-              <button class="btn primary"><svg class="icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></svg>试听这句话</button>
-            </section>
-
+              <div class="voice-row">
+                <div>
+                  <strong>Puck</strong>
+                  <p>更有能量的英文表达，语气更轻快。</p>
+                  <div class="voice-meta"><span class="tag">英文</span><span class="tag">Upbeat</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+              <div class="voice-row">
+                <div>
+                  <strong>Zephyr</strong>
+                  <p>明亮清爽的英文声音，适合轻知识视频。</p>
+                  <div class="voice-meta"><span class="tag">英文</span><span class="tag">Bright</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+              <div class="voice-row">
+                <div>
+                  <strong>Autonoe</strong>
+                  <p>均衡清晰，适合默认英文音色。</p>
+                  <div class="voice-meta"><span class="tag">英文</span><span class="tag">Even</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel audition">
+            <div class="selected">
+              <div class="selected-top">
+                <div>
+                  <h3>配音文案</h3>
+                  <p>填写测试文案，生成音频后确认声音和语气。</p>
+                </div>
+                <span class="pill ok">Achird</span>
+              </div>
+            </div>
+            <textarea class="textarea">Hello, welcome to this lesson. Today we will talk about matrices and vector spaces.</textarea>
+            <div class="count">84 字符</div>
+            <div class="form-list">
+              <div class="form-row"><span>当前音色</span><strong>Achird</strong></div>
+              <div class="form-row"><span>生成类型</span><strong>试听音频</strong></div>
+            </div>
+            <button class="button primary"><span class="ico"><img src="../../resource/assets/icons/play.svg" alt=""></span>生成试听音频</button>
           </aside>
         </div>
       </section>
-    </main>
-  </div>
+    </article>
+
+    <div class="state-title">
+      <h2>状态 B：SiliconFlow，参考音频克隆</h2>
+      <span>克隆控件只在支持的提供商出现</span>
+    </div>
+    <article class="client">
+      <div class="titlebar"><div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>卡卡字幕助手 -- VideoCaptioner</div>
+      <aside class="sidebar">
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/home.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/video.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/subtitle.svg" alt=""></span></div>
+        <div class="nav active"><span class="ico"><img src="../../resource/assets/icons/volume.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/history.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/search.svg" alt=""></span></div>
+        <div class="spacer"></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/github.svg" alt=""></span></div>
+        <div class="nav"><span class="ico"><img src="../../resource/assets/icons/setting.svg" alt=""></span></div>
+      </aside>
+      <section class="app">
+        <header class="head">
+          <div>
+            <h2>配音</h2>
+            <p>中文配音时可以直接选预置音色，也可以加参考音频做声音克隆。</p>
+          </div>
+          <div class="head-actions">
+            <button class="button ghost"><span class="ico"><img src="../../resource/assets/icons/setting.svg" alt=""></span>配音配置</button>
+            <span class="status ok">参考音频已就绪</span>
+          </div>
+        </header>
+        <div class="providers">
+          <button class="provider">
+            <span><strong>Edge 免费配音</strong><em>免 Key，快速生成中文或英文配音</em></span>
+            <span class="pill ok">免 Key</span>
+          </button>
+          <button class="provider">
+            <span><strong>Gemini TTS</strong><em>英文自然表达更稳定</em></span>
+            <span class="pill">需 Key</span>
+          </button>
+          <button class="provider active">
+            <span><strong>SiliconFlow CosyVoice</strong><em>中文音色，支持参考音频克隆</em></span>
+            <span class="pill ok">可克隆</span>
+          </button>
+        </div>
+        <div class="work">
+          <section class="panel">
+            <div class="panel-head">
+              <h3>中文音色</h3>
+              <div class="head-actions">
+                <div class="segment" aria-label="中文音色筛选">
+                  <button class="active">全部</button>
+                  <button>女声</button>
+                  <button>男声</button>
+                  <button>克隆</button>
+                </div>
+              </div>
+            </div>
+            <div class="voice-list">
+              <div class="voice-row active">
+                <div>
+                  <strong>Anna</strong>
+                  <p>自然中文女声，可配合参考音频克隆。</p>
+                  <div class="voice-meta"><span class="tag">中文</span><span class="tag">女声</span><span class="tag">克隆</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini primary">试听</button></div>
+              </div>
+              <div class="voice-row">
+                <div>
+                  <strong>Alex</strong>
+                  <p>自然中文男声，可配合参考音频克隆。</p>
+                  <div class="voice-meta"><span class="tag">中文</span><span class="tag">男声</span><span class="tag">克隆</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+              <div class="voice-row">
+                <div>
+                  <strong>Bella</strong>
+                  <p>热情中文女声，适合短视频讲解。</p>
+                  <div class="voice-meta"><span class="tag">中文</span><span class="tag">女声</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+              <div class="voice-row">
+                <div>
+                  <strong>Benjamin</strong>
+                  <p>沉稳低沉的中文男声。</p>
+                  <div class="voice-meta"><span class="tag">中文</span><span class="tag">男声</span></div>
+                </div>
+                <div class="voice-actions"><button class="mini">试听</button></div>
+              </div>
+            </div>
+          </section>
+          <aside class="panel audition">
+            <div class="selected">
+              <div class="selected-top">
+                <div>
+                  <h3>配音文案</h3>
+                  <p>已选择参考音频，可生成一段克隆试听。</p>
+                </div>
+                <span class="pill ok">Anna</span>
+              </div>
+            </div>
+            <div class="clone-box">
+              <h4>声音克隆</h4>
+              <div class="file-line"><span>teacher-sample.wav · 18s</span><span class="pill ok">已上传</span></div>
+              <div class="row-actions" style="margin-top: 10px;">
+                <button class="mini">上传</button><button class="mini">录制</button><button class="mini danger">清除</button>
+              </div>
+            </div>
+            <textarea class="textarea">我们今天讲矩阵和向量空间，请用自然清晰的语气朗读这一句话。</textarea>
+            <div class="count">33 字</div>
+            <button class="button primary"><span class="ico"><img src="../../resource/assets/icons/play.svg" alt=""></span>生成克隆音频</button>
+          </aside>
+        </div>
+      </section>
+    </article>
+  </main>
 </body>
 </html>

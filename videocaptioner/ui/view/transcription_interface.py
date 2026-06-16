@@ -1609,12 +1609,7 @@ class TranscriptionInterface(QWidget):
     def _open_transcribe_settings(self):
         window = self.window()
         if hasattr(window, "openSettingsPage"):
-            if window.openSettingsPage("transcribe") is not False:  # type: ignore[attr-defined]
-                return
-        setting_interface = getattr(window, "settingInterface", None)
-        if setting_interface is not None and hasattr(window, "switchTo"):
-            if setting_interface.setCurrentPage("transcribe"):
-                window.switchTo(setting_interface)  # type: ignore[attr-defined]
+            window.openSettingsPage("transcribe")  # type: ignore[attr-defined]
 
     def _warn_processing(self):
         InfoBar.warning(

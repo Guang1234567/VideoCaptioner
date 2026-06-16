@@ -1,693 +1,558 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>VideoCaptioner 设置页设计稿</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VideoCaptioner 设置设计</title>
   <style>
     :root {
-      --bg: #202221;
-      --side: #181919;
-      --main: #222424;
-      --panel: #2b2e2d;
-      --field: #1d2020;
-      --line: #3d4341;
-      --line-soft: #343a38;
-      --text: #f4f6f5;
-      --muted: #b9c1bd;
-      --subtle: #858f8a;
-      --accent: #12ef8b;
-      --blue: #2d8cff;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --bg: #0b1110;
+      --app: #151b19;
+      --chrome: #101614;
+      --panel: #1d2522;
+      --panel2: #202a26;
+      --field: #25302c;
+      --line: #34413d;
+      --line2: #2b3632;
+      --text: #f4f7f5;
+      --muted: #aab7b2;
+      --subtle: #7f8d88;
+      --accent: #07f08a;
+      --soft: rgba(7, 240, 138, .13);
+      --warn: #e8c75c;
+      --warn-soft: rgba(232, 199, 92, .14);
+      --danger: #ff806f;
+      --danger-soft: rgba(255, 128, 111, .14);
+      --shadow: 0 28px 80px rgba(0, 0, 0, .28);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
     }
-
     * { box-sizing: border-box; }
-
-    html, body {
+    body {
       margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
+      min-width: 1520px;
       background: var(--bg);
       color: var(--text);
+      font-family: var(--font);
       letter-spacing: 0;
     }
-
-    button, input, textarea, select { font: inherit; }
-    :focus { outline: none; }
-
+    h1, h2, h3, p { margin: 0; }
+    button { border: 0; color: inherit; background: transparent; font: inherit; }
+    .board { width: 1520px; margin: 0 auto; padding: 34px 0 72px; }
+    .board-head, .state-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 24px;
+      padding: 0 40px;
+      margin-bottom: 22px;
+    }
+    .board-head h1 { font-size: 32px; line-height: 1.15; }
+    .board-head p { margin-top: 10px; color: var(--muted); font-size: 15px; font-weight: 680; }
+    .state-title { align-items: center; margin: 34px 0 12px; }
+    .state-title h2 { font-size: 22px; }
+    .state-title span { color: var(--subtle); font-weight: 760; }
     .window {
-      width: 100%;
-      height: 100%;
+      width: 1440px;
+      height: 900px;
+      margin: 0 40px;
       display: grid;
-      grid-template-columns: clamp(248px, 21vw, 292px) minmax(0, 1fr);
-      background: var(--main);
+      grid-template-rows: 48px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid rgba(210,230,220,.14);
+      border-radius: 14px;
+      background: var(--app);
+      box-shadow: var(--shadow);
     }
-
-    .sidebar {
-      background: var(--side);
-      border-right: 1px solid #292d2c;
-      padding: 20px 14px 18px;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
-      gap: 18px;
-    }
-
-    .traffic {
-      height: 22px;
+    .titlebar {
+      position: relative;
       display: flex;
       align-items: center;
-      gap: 11px;
-      padding-left: 6px;
-    }
-
-    .dot { width: 13px; height: 13px; border-radius: 50%; display: block; }
-    .red { background: #ff5f57; }
-    .yellow { background: #ffbd2e; }
-    .green { background: #28c840; }
-
-    .back {
-      height: 38px;
-      border: 0;
-      background: transparent;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 0 8px;
+      justify-content: center;
+      border-bottom: 1px solid var(--line2);
+      background: #141917;
       color: var(--muted);
-      font-size: 15px;
-      font-weight: 720;
-      cursor: pointer;
-    }
-
-    .back:hover {
-      color: var(--accent);
-    }
-
-    .back svg {
-      width: 16px;
-      height: 16px;
-      stroke: currentColor;
-      stroke-width: 2.35;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      flex: 0 0 auto;
-    }
-
-    .nav-section {
-      margin: 10px 10px 8px;
-      color: var(--subtle);
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 820;
     }
-
-    .nav { display: grid; gap: 5px; }
-
-    .nav-item {
-      width: 100%;
-      height: 44px;
-      border: 0;
-      border-radius: 10px;
-      background: transparent;
-      color: var(--muted);
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      text-align: left;
-      cursor: pointer;
-    }
-
-    .nav-item:hover,
-    .nav-item.active {
-      background: rgba(255, 255, 255, .06);
-      color: var(--text);
-    }
-
-    .nav-item.active { background: rgba(255, 255, 255, .075); }
-
-    .nav-text {
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      font-size: 15px;
-      font-weight: 760;
-    }
-
-    .main {
-      height: 100%;
-      overflow: hidden;
-      padding: 70px 56px;
+    .dots { position: absolute; left: 24px; display: flex; gap: 12px; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; }
+    .red { background: #ff5f57; } .yellow { background: #febc2e; } .green { background: #28c840; }
+    .settings {
+      min-height: 0;
       display: grid;
-      place-items: start center;
+      grid-template-columns: 250px minmax(0, 1fr);
+      background: var(--app);
     }
-
-    .page {
-      display: none;
-      width: min(920px, 100%);
-      max-height: calc(100vh - 140px);
-      overflow: auto;
-      padding: 0 4px 36px;
+    .side {
+      padding: 24px 18px;
+      border-right: 1px solid var(--line2);
+      background: var(--chrome);
     }
-
-    .page.active { display: block; }
-    .page::-webkit-scrollbar { width: 6px; }
-    .page::-webkit-scrollbar-thumb { background: #505654; border-radius: 6px; }
-
-    h1 {
-      margin: 0 0 56px;
-      font-size: 30px;
-      line-height: 1.15;
-      text-align: center;
+    .back {
+      height: 42px;
+      margin-bottom: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 16px;
       font-weight: 860;
     }
-
-    .section { margin-bottom: 42px; }
-
-    .section-title {
-      margin: 0 0 14px;
-      font-size: 17px;
-      line-height: 1.2;
-      font-weight: 840;
+    .chev {
+      width: 9px;
+      height: 9px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg);
+      opacity: .75;
     }
-
-    .settings-box {
+    .inline-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      width: 100%;
+    }
+    .inline-actions span {
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line2);
+      border-radius: 9px;
+      background: rgba(255,255,255,.03);
+    }
+    .nav-title { margin: 0 0 12px 10px; color: var(--subtle); font-size: 12px; font-weight: 860; }
+    .nav-list { display: grid; gap: 6px; }
+    .nav-item {
+      height: 46px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: 13px;
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 860;
+    }
+    .nav-item.active { color: var(--text); background: rgba(7,240,138,.16); border: 1px solid rgba(7,240,138,.42); }
+    .nav-item .dot-state {
+      display: none;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--line);
+    }
+    .nav-item .dot-state.ok { background: var(--accent); }
+    .nav-item .dot-state.warn { background: var(--warn); }
+    .main {
+      min-width: 0;
+      min-height: 0;
+      padding: 34px 34px 30px;
+      overflow: auto;
+      scrollbar-gutter: stable;
+    }
+    .main::-webkit-scrollbar { width: 8px; }
+    .main::-webkit-scrollbar-thumb { border-radius: 8px; background: #3f4b46; }
+    .page-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .page-head h2 { font-size: 34px; line-height: 1.12; }
+    .page-head p { margin-top: 8px; color: var(--muted); font-size: 14px; font-weight: 680; }
+    .pill {
+      min-height: 30px;
+      padding: 0 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+    .pill.ok { color: var(--accent); border-color: rgba(7,240,138,.55); background: var(--soft); }
+    .pill.warn { color: var(--warn); border-color: rgba(232,199,92,.55); background: var(--warn-soft); }
+    .pill.fail { color: #ffd2cd; border-color: rgba(255,128,111,.55); background: var(--danger-soft); }
+    .group {
+      margin-bottom: 18px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
       background: var(--panel);
       overflow: hidden;
     }
-
-    .setting-row {
-      min-height: 76px;
-      display: grid;
-      grid-template-columns: minmax(280px, 1fr) minmax(250px, auto);
-      gap: 28px;
+    .group-title {
+      min-height: 56px;
+      padding: 0 18px;
+      display: flex;
       align-items: center;
-      padding: 15px 18px;
-      border-bottom: 1px solid var(--line-soft);
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line2);
     }
-
-    .setting-row:last-child { border-bottom: 0; }
-    [hidden] { display: none !important; }
-
-    .row-title {
-      margin-bottom: 6px;
-      font-size: 15px;
-      line-height: 1.25;
-      font-weight: 820;
+    .group-title h3 { font-size: 18px; }
+    .row {
+      min-height: 76px;
+      padding: 14px 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 22px;
+      align-items: center;
+      border-bottom: 1px solid var(--line2);
     }
-
-    .row-desc {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.45;
-    }
-
-    .control, .input, .button {
-      min-width: 250px;
-      height: 40px;
-      border-radius: 10px;
-      border: 1px solid var(--line-soft);
+    .row:last-child { border-bottom: 0; }
+    .row strong { display: block; font-size: 16px; line-height: 1.2; }
+    .row p { margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.42; font-weight: 680; }
+    .control {
+      min-height: 42px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
       background: var(--field);
       color: var(--text);
-      display: inline-flex;
+      font-size: 14px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+    .control.button {
+      justify-content: center;
+      color: var(--text);
+    }
+    .control.primary { color: #061810; border-color: transparent; background: var(--accent); }
+    .switch { width: 58px; height: 30px; border-radius: 999px; background: var(--accent); position: relative; margin-left: auto; }
+    .switch::after { content: ""; position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border-radius: 50%; background: #07110d; }
+    .range {
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent) 0 56%, rgba(255,255,255,.08) 56%);
+    }
+    .side-panel {
+      display: none;
+      min-width: 0;
+      padding: 24px 18px;
+      border-left: 1px solid var(--line2);
+      background:
+        radial-gradient(circle at 100% 0, rgba(7,240,138,.08), transparent 34%),
+        var(--chrome);
+      overflow: auto;
+    }
+    .side-panel h3 { font-size: 20px; margin-bottom: 14px; }
+    .state-card {
+      margin-bottom: 10px;
+      padding: 14px;
+      border: 1px solid var(--line2);
+      border-radius: 15px;
+      background: rgba(255,255,255,.025);
+    }
+    .state-card strong { display: block; font-size: 15px; }
+    .state-card p { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.45; font-weight: 700; }
+    .all-pages {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0;
+      margin-top: 0;
+      border: 1px solid var(--line2);
+      border-radius: 15px;
+      overflow: hidden;
+    }
+    .page-card {
+      min-height: 48px;
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 150px minmax(0, 1fr);
+      gap: 18px;
+      align-items: center;
+      border-bottom: 1px solid var(--line2);
+      background: rgba(255,255,255,.018);
+    }
+    .page-card:last-child { border-bottom: 0; }
+    .page-card strong { font-size: 15px; }
+    .page-card p { margin-top: 0; color: var(--muted); font-size: 12px; line-height: 1.35; font-weight: 700; }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .mini-group {
+      min-height: 150px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+    .mini-group h3 {
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .mini-list {
+      display: grid;
+      gap: 7px;
+    }
+    .mini-item {
+      min-height: 30px;
+      display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 0 13px;
-      font-size: 14px;
+      color: var(--muted);
+      font-size: 12px;
       font-weight: 760;
     }
-
-    select.control {
-      appearance: none;
-      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-      background-position: calc(100% - 17px) 17px, calc(100% - 12px) 17px;
-      background-size: 5px 5px, 5px 5px;
-      background-repeat: no-repeat;
-      padding-right: 34px;
-    }
-
-    .input {
-      justify-content: flex-start;
-      color: var(--muted);
-    }
-
-    .button {
-      min-width: 0;
-      justify-content: center;
-      background: #2a2d2c;
-      padding: 0 16px;
-      cursor: pointer;
-    }
-
-    .button.primary {
-      color: #061810;
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-
-    .button.danger {
-      color: #ffd9d7;
-      background: rgba(255, 107, 99, .1);
-      border-color: rgba(255, 107, 99, .28);
-    }
-
-    .switch {
-      justify-self: end;
-      width: 50px;
-      height: 28px;
-      border-radius: 14px;
-      background: var(--blue);
-      position: relative;
-    }
-
-    .switch::after {
-      content: "";
-      position: absolute;
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      top: 3px;
-      right: 3px;
-      background: white;
-    }
-
-    .switch.off { background: #4d5351; }
-    .switch.off::after { left: 3px; right: auto; }
-
-    .slider {
-      justify-self: end;
-      display: grid;
-      grid-template-columns: 34px 200px;
-      align-items: center;
-      gap: 12px;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 760;
-    }
-
-    .track {
-      height: 5px;
-      border-radius: 5px;
-      background: #1a1c1c;
-      position: relative;
-    }
-
-    .track::before {
-      content: "";
-      position: absolute;
-      inset: 0 auto 0 0;
-      width: 45%;
-      border-radius: inherit;
-      background: var(--blue);
-    }
-
-    .track::after {
-      content: "";
-      position: absolute;
-      left: 45%;
-      top: 50%;
-      width: 22px;
-      height: 22px;
-      transform: translate(-50%, -50%);
-      border-radius: 50%;
-      background: white;
-    }
-
-    .actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    @media (max-width: 980px) {
-      html, body { overflow: auto; }
-      .window { min-height: 100vh; height: auto; grid-template-columns: 1fr; }
-      .main { height: auto; overflow: visible; padding: 36px 20px 60px; }
-      .page { max-height: none; overflow: visible; }
-      .setting-row { grid-template-columns: 1fr; gap: 12px; }
-      .control, .input, .switch, .slider { justify-self: stretch; width: 100%; }
+    .mini-item span:first-child { color: var(--text); }
+    .mini-badge {
+      padding: 4px 8px;
+      border: 1px solid var(--line2);
+      border-radius: 999px;
+      background: rgba(255,255,255,.025);
+      color: var(--subtle);
+      white-space: nowrap;
     }
   </style>
 </head>
 <body>
-  <div class="window">
-    <aside class="sidebar">
-      <div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
-      <button class="back" type="button" aria-label="返回应用">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M15 18l-6-6 6-6"></path>
-        </svg>
-        <span>返回应用</span>
-      </button>
+  <main class="board">
+    <header class="board-head">
       <div>
-        <div class="nav-section">设置</div>
-        <nav class="nav">
-          <button class="nav-item active" data-page="transcribe"><span class="nav-text">转录配置</span></button>
-          <button class="nav-item" data-page="llm"><span class="nav-text">LLM 配置</span></button>
-          <button class="nav-item" data-page="translate-service"><span class="nav-text">翻译服务</span></button>
-          <button class="nav-item" data-page="translate"><span class="nav-text">翻译与优化</span></button>
-          <button class="nav-item" data-page="subtitle"><span class="nav-text">字幕合成配置</span></button>
-          <button class="nav-item" data-page="dubbing"><span class="nav-text">配音配置</span></button>
-          <button class="nav-item" data-page="save"><span class="nav-text">保存配置</span></button>
-          <button class="nav-item" data-page="personal"><span class="nav-text">个性化</span></button>
-          <button class="nav-item" data-page="about"><span class="nav-text">关于</span></button>
-        </nav>
+        <h1>设置页重设计</h1>
+        <p>左侧分类保持稳定，页面内直接编辑当前设置。动态字段只在当前提供商需要时出现。</p>
       </div>
-    </aside>
+      <span class="pill ok">功能已对齐真实设置页</span>
+    </header>
 
-    <main class="main">
-      <section class="page active" id="transcribe">
-        <h1>转录配置</h1>
-        <div class="settings-box">
-          <div class="setting-row">
-            <div><div class="row-title">转录模型</div><div class="row-desc">语音转换文字要使用的语音识别服务。</div></div>
-            <select class="control" id="transcribe-model">
-              <option>B 接口</option>
-              <option>J 接口</option>
-              <option selected>百炼 Fun-ASR</option>
-              <option>Whisper [API]</option>
-              <option>FasterWhisper</option>
-              <option>WhisperCpp</option>
-            </select>
-          </div>
-          <div class="setting-row">
-            <div><div class="row-title">输出格式</div><div class="row-desc">转录完成后保存的字幕文件格式。</div></div>
-            <select class="control"><option>SRT</option><option>ASS</option><option>VTT</option><option>TXT</option><option>All</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="whisper">
-            <div><div class="row-title">Whisper API Base URL</div><div class="row-desc">输入 Whisper API Base URL。</div></div>
-            <div class="input">https://api.openai.com/v1</div>
-          </div>
-          <div class="setting-row" data-show-transcribe="whisper">
-            <div><div class="row-title">Whisper API Key</div><div class="row-desc">输入 Whisper API Key。</div></div>
-            <div class="input">sk-••••••••••••</div>
-          </div>
-          <div class="setting-row" data-show-transcribe="whisper">
-            <div><div class="row-title">Whisper 模型</div><div class="row-desc">选择 Whisper 模型。</div></div>
-            <select class="control"><option>whisper-1</option><option>whisper-large-v3-turbo</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="whisper">
-            <div><div class="row-title">源语言</div><div class="row-desc">音视频中说话的语言，默认根据前 30 秒自动识别。</div></div>
-            <select class="control"><option>自动检测</option><option>中文</option><option>英文</option><option>日语</option><option>韩语</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="whisper">
-            <div><div class="row-title">提示词</div><div class="row-desc">可选的转录提示词，默认空。</div></div>
-            <div class="input">未填写</div>
-          </div>
-          <div class="setting-row" data-show-transcribe="funasr">
-            <div><div class="row-title">百炼 API Base URL</div><div class="row-desc">输入百炼 DashScope API Base URL。</div></div>
-            <div class="input">https://dashscope.aliyuncs.com</div>
-          </div>
-          <div class="setting-row" data-show-transcribe="funasr">
-            <div><div class="row-title">百炼 API Key</div><div class="row-desc">输入百炼 DashScope API Key。</div></div>
-            <div class="input">sk-••••••••••••</div>
-          </div>
-          <div class="setting-row" data-show-transcribe="funasr">
-            <div><div class="row-title">百炼 ASR 模型</div><div class="row-desc">选择百炼 Fun-ASR 模型。</div></div>
-            <select class="control"><option>fun-asr</option><option>fun-asr-2025-11-07</option><option>fun-asr-2025-08-25</option><option>fun-asr-mtl</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="funasr">
-            <div><div class="row-title">源语言</div><div class="row-desc">不确定时保持自动检测。</div></div>
-            <select class="control"><option>自动检测</option><option>中文</option><option>英文</option><option>日语</option><option>韩语</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="whispercpp">
-            <div><div class="row-title">WhisperCpp 模型</div><div class="row-desc">选择本地 whisper.cpp 模型。</div></div>
-            <select class="control"><option>Tiny</option><option>Base</option><option>Small</option><option>Medium</option><option>large-v2</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="whispercpp">
-            <div><div class="row-title">模型管理</div><div class="row-desc">下载模型，或打开模型文件夹。</div></div>
-            <button class="button">管理模型</button>
-          </div>
-          <div class="setting-row" data-show-transcribe="whispercpp">
-            <div><div class="row-title">源语言</div><div class="row-desc">音视频中说话的语言。</div></div>
-            <select class="control"><option>自动检测</option><option>中文</option><option>英文</option><option>日语</option><option>韩语</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">Faster Whisper 模型</div><div class="row-desc">选择已下载的 Faster Whisper 模型。</div></div>
-            <select class="control"><option>tiny</option><option>base</option><option>small</option><option>medium</option><option>large-v3</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">模型管理</div><div class="row-desc">下载或更新 Faster Whisper 模型。</div></div>
-            <button class="button">管理模型</button>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">运行设备</div><div class="row-desc">模型运行设备。</div></div>
-            <select class="control"><option>auto</option><option>cuda</option><option>cpu</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">源语言</div><div class="row-desc">音视频中说话的语言。</div></div>
-            <select class="control"><option>自动检测</option><option>中文</option><option>英文</option><option>日语</option><option>韩语</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">VAD 过滤</div><div class="row-desc">过滤无人声语音片段，减少幻觉。</div></div>
-            <div class="switch"></div>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">VAD 阈值</div><div class="row-desc">语音概率阈值，高于此值视为语音。</div></div>
-            <div class="slider"><span>0.40</span><div class="track"></div></div>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">VAD 方法</div><div class="row-desc">选择 VAD 检测方法。</div></div>
-            <select class="control"><option>silero_v4</option><option>silero_v5</option><option>webrtc</option><option>auditok</option></select>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">人声分离</div><div class="row-desc">处理前使用 MDX-Net 降噪，分离人声和背景音乐。</div></div>
-            <div class="switch off"></div>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">单字时间戳</div><div class="row-desc">开启生成单字级时间戳；关闭后使用原始分段断句。</div></div>
-            <div class="switch"></div>
-          </div>
-          <div class="setting-row" data-show-transcribe="faster">
-            <div><div class="row-title">提示词</div><div class="row-desc">可选的转录提示词，默认空。</div></div>
-            <div class="input">未填写</div>
-          </div>
-        </div>
-        <div class="actions" data-show-transcribe="whisper"><button class="button">测试 Whisper 连接</button></div>
-        <div class="actions" data-show-transcribe="funasr"><button class="button">测试百炼连接</button></div>
+    <div class="state-title">
+      <h2>状态 A：转录配置，模型可用</h2>
+      <span>九个设置页全部列出，当前页只显示必要字段</span>
+    </div>
+    <article class="window">
+      <div class="titlebar"><div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>设置</div>
+      <section class="settings">
+        <aside class="side">
+          <button class="back">返回应用</button>
+          <div class="nav-title">设置</div>
+          <nav class="nav-list">
+            <div class="nav-item active">转录配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">LLM 配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">翻译服务 <i class="dot-state ok"></i></div>
+            <div class="nav-item">翻译与优化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">字幕合成配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">配音配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">保存配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">个性化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">关于 <i class="dot-state ok"></i></div>
+          </nav>
+        </aside>
+        <main class="main">
+          <header class="page-head">
+            <div>
+              <h2>转录配置</h2>
+              <p>选择转录服务、输出格式和本地模型。测试转录对所有服务共用同一入口。</p>
+            </div>
+            <span class="pill ok">可转录</span>
+          </header>
+          <section class="group">
+            <div class="group-title"><h3>基础</h3><span class="pill ok">B 接口</span></div>
+            <div class="row"><div><strong>转录模型</strong><p>选择生成原始字幕时使用的语音识别服务。</p></div><div class="control">B 接口 <span class="chev"></span></div></div>
+            <div class="row"><div><strong>输出格式</strong><p>转录完成后保存的字幕文件格式。</p></div><div class="control">SRT <span class="chev"></span></div></div>
+            <div class="row"><div><strong>源语言</strong><p>音视频中说话的语言，不确定时保持自动检测。</p></div><div class="control">自动检测 <span class="chev"></span></div></div>
+          </section>
+          <section class="group">
+            <div class="group-title"><h3>本地模型</h3><span class="pill">按服务显示</span></div>
+            <div class="row"><div><strong>WhisperCpp 模型</strong><p>仅在选择 whisper.cpp 时出现；列表只显示已下载模型。</p></div><div class="control">tiny <span class="chev"></span></div></div>
+            <div class="row"><div><strong>管理模型</strong><p>查看运行程序状态、下载和管理模型文件。</p></div><div class="control button">管理模型</div></div>
+            <div class="row"><div><strong>测试转录</strong><p>用内置短音频真实转录一次，验证当前服务能跑通。</p></div><div class="control primary">测试转录</div></div>
+          </section>
+          <section class="group">
+            <div class="group-title"><h3>设置目录</h3><span class="pill">9 页</span></div>
+            <div class="all-pages">
+              <div class="page-card"><strong>转录配置</strong><p>ASR 服务、格式、语言、本地模型、测试转录。</p></div>
+              <div class="page-card"><strong>LLM 配置</strong><p>提供商、Key、Base URL、模型、加载模型和测试连接。</p></div>
+              <div class="page-card"><strong>翻译服务</strong><p>翻译服务、反思翻译、DeepLX、批处理和并发。</p></div>
+              <div class="page-card"><strong>翻译与优化</strong><p>校正、翻译、断句、目标语言、长度和提示词。</p></div>
+              <div class="page-card"><strong>字幕合成配置</strong><p>样式页、字幕布局、渲染模式、视频输出和质量。</p></div>
+              <div class="page-card"><strong>配音配置</strong><p>默认配音、提供商、音色、轨道、对齐、原声和 Key。</p></div>
+              <div class="page-card"><strong>保存配置</strong><p>工作目录、保留中间文件、输出策略。</p></div>
+              <div class="page-card"><strong>个性化</strong><p>主题、颜色、语言和界面偏好。</p></div>
+              <div class="page-card"><strong>关于</strong><p>版本、更新、项目链接和反馈入口。</p></div>
+            </div>
+          </section>
+        </main>
       </section>
+    </article>
 
-      <section class="page" id="llm">
-        <h1>LLM 配置</h1>
-        <div class="settings-box">
-          <div class="setting-row">
-            <div><div class="row-title">LLM 提供商</div><div class="row-desc">选择大模型提供商，用于字幕断句、优化、翻译。</div></div>
-            <select class="control" id="llm-provider">
-              <option selected>OpenAI 兼容</option><option>SiliconCloud</option><option>DeepSeek</option><option>Ollama</option><option>LM Studio</option><option>Gemini</option><option>ChatGLM</option>
-            </select>
-          </div>
-          <div class="setting-row" data-show-llm="OpenAI 兼容">
-            <div><div class="row-title">VideoCaptioner 官方API</div><div class="row-desc">集成多种大语言模型，支持高并发字幕优化、翻译。</div></div>
-            <button class="button">访问</button>
-          </div>
-          <div class="setting-row" data-llm-config>
-            <div><div class="row-title">API Key</div><div class="row-desc">输入当前提供商的 API Key。</div></div>
-            <div class="input" id="llm-key">sk-••••••••••••</div>
-          </div>
-          <div class="setting-row" data-llm-config>
-            <div><div class="row-title">Base URL</div><div class="row-desc">当前提供商的 Base URL。</div></div>
-            <div class="input" id="llm-base">https://api.openai.com/v1</div>
-          </div>
-          <div class="setting-row" data-llm-config>
-            <div><div class="row-title">模型</div><div class="row-desc">选择当前提供商的模型。</div></div>
-            <select class="control" id="llm-model"><option>gpt-5</option><option>gemini-2.5-pro</option><option>claude-sonnet-4-5-20250929</option></select>
-          </div>
-        </div>
-        <div class="actions"><button class="button">检查连接</button></div>
+    <div class="state-title">
+      <h2>状态 B：LLM 配置，缺少 Key</h2>
+      <span>错误状态内联显示，按钮位置不变</span>
+    </div>
+    <article class="window">
+      <div class="titlebar"><div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>设置</div>
+      <section class="settings">
+        <aside class="side">
+          <button class="back">返回应用</button>
+          <div class="nav-title">设置</div>
+          <nav class="nav-list">
+            <div class="nav-item">转录配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item active">LLM 配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">翻译服务 <i class="dot-state ok"></i></div>
+            <div class="nav-item">翻译与优化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">字幕合成配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">配音配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">保存配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">个性化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">关于 <i class="dot-state ok"></i></div>
+          </nav>
+        </aside>
+        <main class="main">
+          <header class="page-head">
+            <div>
+              <h2>LLM 配置</h2>
+              <p>用于字幕断句、校正和 LLM 翻译。模型列表和连接测试分开执行。</p>
+            </div>
+            <span class="pill warn">缺少 API Key</span>
+          </header>
+          <section class="group">
+            <div class="group-title"><h3>模型服务</h3><span class="pill warn">待配置</span></div>
+            <div class="row"><div><strong>LLM 提供商</strong><p>选择当前字幕处理使用的大模型服务。</p></div><div class="control">OpenAI 兼容 <span class="chev"></span></div></div>
+            <div class="row"><div><strong>API Key</strong><p>调用大模型时使用。保存前会自动去掉多余空白。</p></div><div class="control">未填写</div></div>
+            <div class="row"><div><strong>Base URL</strong><p>仅 OpenAI 兼容或本地服务需要修改。</p></div><div class="control">https://api.openai.com/v1</div></div>
+            <div class="row"><div><strong>模型</strong><p>用于断句、校正、翻译的大模型名称。</p></div><div class="control">gpt-4o-mini <span class="chev"></span></div></div>
+            <div class="row"><div><strong>模型服务</strong><p>先加载可用模型，再用当前模型测试连通性。</p></div><div class="control"><span class="inline-actions"><span>加载模型</span><span>测试连接</span></span></div></div>
+          </section>
+          <section class="group">
+            <div class="group-title"><h3>相关开关</h3><span class="pill">影响诊断</span></div>
+            <div class="row"><div><strong>字幕校正</strong><p>开启后处理字幕时会调用 LLM。</p></div><div class="switch"></div></div>
+            <div class="row"><div><strong>字幕断句</strong><p>开启后会按语义重新切分字幕。</p></div><div class="switch"></div></div>
+            <div class="row"><div><strong>字幕翻译</strong><p>如果翻译服务选择 LLM，会复用本页 Key。</p></div><div class="control">微软翻译</div></div>
+          </section>
+        </main>
       </section>
+    </article>
 
-      <section class="page" id="translate-service">
-        <h1>翻译服务</h1>
-        <div class="settings-box">
-          <div class="setting-row">
-            <div><div class="row-title">翻译服务</div><div class="row-desc">选择翻译服务。</div></div>
-            <select class="control" id="translator-service"><option selected>微软翻译</option><option>LLM 大模型翻译</option><option>DeepLx 翻译</option><option>谷歌翻译</option></select>
+    <div class="state-title">
+      <h2>状态 C：设置总览</h2>
+      <span>九个设置页与关键设置项完整展示，方便确认信息架构</span>
+    </div>
+    <article class="window">
+      <div class="titlebar"><div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>设置</div>
+      <section class="settings">
+        <aside class="side">
+          <button class="back">返回应用</button>
+          <div class="nav-title">设置</div>
+          <nav class="nav-list">
+            <div class="nav-item active">转录配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">LLM 配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">翻译服务 <i class="dot-state ok"></i></div>
+            <div class="nav-item">翻译与优化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">字幕合成配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">配音配置 <i class="dot-state warn"></i></div>
+            <div class="nav-item">保存配置 <i class="dot-state ok"></i></div>
+            <div class="nav-item">个性化 <i class="dot-state ok"></i></div>
+            <div class="nav-item">关于 <i class="dot-state ok"></i></div>
+          </nav>
+        </aside>
+        <main class="main">
+          <header class="page-head">
+            <div>
+              <h2>设置总览</h2>
+              <p>所有页面保持同一行高、同一控件宽度；服务相关字段只在对应提供商下出现。</p>
+            </div>
+            <span class="pill ok">9 页</span>
+          </header>
+          <div class="overview-grid">
+            <section class="mini-group">
+              <h3>转录配置</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>转录模型</span><b class="mini-badge">B 接口</b></div>
+                <div class="mini-item"><span>输出格式</span><b class="mini-badge">SRT</b></div>
+                <div class="mini-item"><span>源语言</span><b class="mini-badge">自动检测</b></div>
+                <div class="mini-item"><span>本地模型</span><b class="mini-badge">按服务显示</b></div>
+                <div class="mini-item"><span>测试转录</span><b class="mini-badge">统一入口</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>LLM 配置</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>提供商</span><b class="mini-badge">OpenAI 兼容</b></div>
+                <div class="mini-item"><span>API Key</span><b class="mini-badge">未填写</b></div>
+                <div class="mini-item"><span>Base URL</span><b class="mini-badge">可编辑</b></div>
+                <div class="mini-item"><span>模型</span><b class="mini-badge">gpt-4o-mini</b></div>
+                <div class="mini-item"><span>加载 / 测试</span><b class="mini-badge">分开</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>翻译服务</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>翻译服务</span><b class="mini-badge">微软翻译</b></div>
+                <div class="mini-item"><span>反思翻译</span><b class="mini-badge">关闭</b></div>
+                <div class="mini-item"><span>DeepLX 后端</span><b class="mini-badge">按服务显示</b></div>
+                <div class="mini-item"><span>批处理大小</span><b class="mini-badge">可调</b></div>
+                <div class="mini-item"><span>并发数</span><b class="mini-badge">可调</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>翻译与优化</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>字幕校正</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>字幕翻译</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>字幕断句</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>目标语言</span><b class="mini-badge">简体中文</b></div>
+                <div class="mini-item"><span>提示词</span><b class="mini-badge">设置页内</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>字幕合成配置</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>字幕样式</span><b class="mini-badge">样式页</b></div>
+                <div class="mini-item"><span>字幕布局</span><b class="mini-badge">单语 / 双语</b></div>
+                <div class="mini-item"><span>渲染模式</span><b class="mini-badge">ASS / 圆角</b></div>
+                <div class="mini-item"><span>合成视频</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>视频质量</span><b class="mini-badge">中等</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>配音配置</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>默认配音</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>提供商</span><b class="mini-badge">Edge / Gemini</b></div>
+                <div class="mini-item"><span>默认音色</span><b class="mini-badge">音色页选择</b></div>
+                <div class="mini-item"><span>文本轨道</span><b class="mini-badge">自动选择</b></div>
+                <div class="mini-item"><span>克隆字段</span><b class="mini-badge">按服务显示</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>保存配置</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>工作目录</span><b class="mini-badge">可选择</b></div>
+                <div class="mini-item"><span>保留中间文件</span><b class="mini-badge">开关</b></div>
+                <div class="mini-item"><span>输出位置</span><b class="mini-badge">源文件目录</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>个性化</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>主题</span><b class="mini-badge">跟随系统</b></div>
+                <div class="mini-item"><span>语言</span><b class="mini-badge">简体中文</b></div>
+                <div class="mini-item"><span>界面偏好</span><b class="mini-badge">本机保存</b></div>
+              </div>
+            </section>
+            <section class="mini-group">
+              <h3>关于</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span>版本</span><b class="mini-badge">1.4.3</b></div>
+                <div class="mini-item"><span>更新</span><b class="mini-badge">检查更新</b></div>
+                <div class="mini-item"><span>项目链接</span><b class="mini-badge">GitHub</b></div>
+              </div>
+            </section>
           </div>
-          <div class="setting-row" data-show-translator="llm">
-            <div><div class="row-title">需要反思翻译</div><div class="row-desc">启用反思翻译可以提高翻译质量，但耗费更多时间和 token。</div></div>
-            <div class="switch off"></div>
-          </div>
-          <div class="setting-row" data-show-translator="deeplx">
-            <div><div class="row-title">DeepLx 后端</div><div class="row-desc">开启 DeepLx 翻译时必填。</div></div>
-            <div class="input">https://api.deeplx.org/translate</div>
-          </div>
-          <div class="setting-row" data-show-translator="llm">
-            <div><div class="row-title">批处理大小</div><div class="row-desc">每批处理字幕的数量，建议为 10 的倍数。</div></div>
-            <div class="slider"><span>10</span><div class="track"></div></div>
-          </div>
-          <div class="setting-row">
-            <div><div class="row-title">线程数</div><div class="row-desc">请求并行处理的数量。</div></div>
-            <div class="slider"><span>4</span><div class="track"></div></div>
-          </div>
-        </div>
+        </main>
       </section>
-
-      <section class="page" id="translate">
-        <h1>翻译与优化</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">字幕校正</div><div class="row-desc">字幕处理过程是否对错别字、名词等进行校正。</div></div><div class="switch"></div></div>
-          <div class="setting-row"><div><div class="row-title">字幕翻译</div><div class="row-desc">字幕处理过程是否对生成的字幕进行翻译。</div></div><div class="switch"></div></div>
-          <div class="setting-row"><div><div class="row-title">目标语言</div><div class="row-desc">选择翻译字幕的目标语言。</div></div><select class="control"><option>简体中文</option><option>繁體中文</option><option>English</option><option>日本語</option></select></div>
-        </div>
-      </section>
-
-      <section class="page" id="subtitle">
-        <h1>字幕合成配置</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">字幕样式</div><div class="row-desc">选择字幕的样式（颜色、大小、字体等）。</div></div><button class="button">修改</button></div>
-          <div class="setting-row"><div><div class="row-title">字幕布局</div><div class="row-desc">选择字幕的布局（单语、双语）。</div></div><button class="button">修改</button></div>
-          <div class="setting-row"><div><div class="row-title">需要合成视频</div><div class="row-desc">开启时触发合成视频，关闭时跳过。</div></div><div class="switch"></div></div>
-          <div class="setting-row"><div><div class="row-title">软字幕</div><div class="row-desc">开启时字幕可在播放器中关闭或调整。</div></div><div class="switch off"></div></div>
-          <div class="setting-row"><div><div class="row-title">视频合成质量</div><div class="row-desc">质量越高文件越大，编码时间越长。</div></div><select class="control"><option>极高质量</option><option>高质量</option><option selected>中等质量</option><option>低质量</option></select></div>
-        </div>
-      </section>
-
-      <section class="page" id="dubbing">
-        <h1>配音配置</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">默认添加配音</div><div class="row-desc">开启后，最终合成页会默认生成配音。</div></div><div class="switch off"></div></div>
-          <div class="setting-row"><div><div class="row-title">配音提供商</div><div class="row-desc">Edge 免费免 Key；Gemini 和 SiliconFlow 需要 API Key。</div></div><select class="control" id="dubbing-provider"><option selected>Edge 免费配音</option><option>Gemini TTS</option><option>SiliconFlow CosyVoice</option></select></div>
-          <div class="setting-row"><div><div class="row-title">默认配音音色</div><div class="row-desc">根据配音提供商显示对应音色。</div></div><select class="control" id="dubbing-voice"><option>晓晓 · edge-cn-female</option><option>云希 · edge-cn-male</option></select></div>
-          <div class="setting-row"><div><div class="row-title">配音文本轨道</div><div class="row-desc">选择用原文、译文，或自动判断生成配音。</div></div><select class="control"><option>自动</option><option>第一轨</option><option>第二轨</option></select></div>
-          <div class="setting-row"><div><div class="row-title">时间对齐</div><div class="row-desc">控制配音语速与字幕时间轴的贴合程度。</div></div><select class="control"><option>自然</option><option selected>均衡</option><option>严格</option></select></div>
-          <div class="setting-row"><div><div class="row-title">原声处理</div><div class="row-desc">生成视频时如何处理原视频声音。</div></div><select class="control"><option selected>替换原声</option><option>混合原声</option><option>压低原声</option></select></div>
-          <div class="setting-row" data-show-dubbing="api"><div><div class="row-title">配音 API Key</div><div class="row-desc">Gemini 或 SiliconFlow 配音需要填写；Edge 可留空。</div></div><div class="input">sk-••••••••••••</div></div>
-          <div class="setting-row" data-show-dubbing="api"><div><div class="row-title">配音 Base URL</div><div class="row-desc">仅自定义 SiliconFlow/Gemini 接口时需要修改。</div></div><div class="input" id="dubbing-base">https://api.siliconflow.cn/v1</div></div>
-          <div class="setting-row" data-show-dubbing="api"><div><div class="row-title">配音模型</div><div class="row-desc">Gemini 或 SiliconFlow 使用的文字转语音模型。</div></div><select class="control" id="dubbing-model"><option>FunAudioLLM/CosyVoice2-0.5B</option></select></div>
-          <div class="setting-row" data-show-dubbing="clone"><div><div class="row-title">参考音频</div><div class="row-desc">SiliconFlow CosyVoice 可使用参考音频克隆声音。</div></div><div class="input">未选择参考音频</div></div>
-          <div class="setting-row" data-show-dubbing="clone"><div><div class="row-title">参考文本</div><div class="row-desc">参考音频里实际朗读的文字。</div></div><div class="input">未填写</div></div>
-          <div class="setting-row"><div><div class="row-title">测试配音</div><div class="row-desc">合成一句试听音频，验证当前配音配置。</div></div><button class="button">测试配音</button></div>
-          <div class="setting-row"><div><div class="row-title">配音并发</div><div class="row-desc">同时合成的字幕行数，默认 5。</div></div><div class="slider"><span>5</span><div class="track"></div></div></div>
-        </div>
-      </section>
-
-      <section class="page" id="save">
-        <h1>保存配置</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">工作目录路径</div><div class="row-desc">中间文件、缓存和导出文件默认位置。</div></div><button class="button">工作文件夹</button></div>
-          <div class="setting-row"><div><div class="row-title">启用缓存</div><div class="row-desc">相同配置下会复用之前的 ASR 和 LLM 结果。</div></div><div class="switch"></div></div>
-        </div>
-      </section>
-
-      <section class="page" id="personal">
-        <h1>个性化</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">应用主题</div><div class="row-desc">更改应用程序的外观。</div></div><select class="control"><option>浅色</option><option selected>深色</option><option>使用系统设置</option></select></div>
-          <div class="setting-row"><div><div class="row-title">主题颜色</div><div class="row-desc">更改应用程序的主题颜色。</div></div><button class="button">选择颜色</button></div>
-          <div class="setting-row"><div><div class="row-title">界面缩放</div><div class="row-desc">更改小部件和字体的大小。</div></div><select class="control"><option>100%</option><option>125%</option><option>150%</option><option>使用系统设置</option></select></div>
-          <div class="setting-row"><div><div class="row-title">语言</div><div class="row-desc">设置您偏好的界面语言。</div></div><select class="control"><option>简体中文</option><option>繁體中文</option><option>English</option><option>使用系统设置</option></select></div>
-        </div>
-      </section>
-
-      <section class="page" id="about">
-        <h1>关于</h1>
-        <div class="settings-box">
-          <div class="setting-row"><div><div class="row-title">帮助</div><div class="row-desc">发现新功能并了解有关 VideoCaptioner 的使用技巧。</div></div><button class="button">打开帮助页面</button></div>
-          <div class="setting-row"><div><div class="row-title">提供反馈</div><div class="row-desc">提供反馈帮助我们改进 VideoCaptioner。</div></div><button class="button primary">提供反馈</button></div>
-          <div class="setting-row"><div><div class="row-title">关于</div><div class="row-desc">© 版权所有 2026, VideoCaptioner. 版本 1.4.3</div></div><button class="button">检查更新</button></div>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <script>
-    const navItems = document.querySelectorAll(".nav-item");
-    const pages = document.querySelectorAll(".page");
-
-    function showPage(id, syncHash = true) {
-      const target = document.getElementById(id) || document.getElementById("transcribe");
-      pages.forEach(page => page.classList.toggle("active", page === target));
-      navItems.forEach(item => item.classList.toggle("active", item.dataset.page === target.id));
-      target.scrollTop = 0;
-      window.scrollTo(0, 0);
-      if (syncHash) history.replaceState(null, "", `#${target.id}`);
-    }
-
-    function updateConditionalRows() {
-      const transcribe = document.getElementById("transcribe-model").value;
-      const transcribeVisible = {
-        whisper: transcribe.includes("Whisper [API]"),
-        funasr: transcribe.includes("百炼"),
-        whispercpp: transcribe.includes("WhisperCpp"),
-        faster: transcribe.includes("FasterWhisper")
-      };
-      document.querySelectorAll("[data-show-transcribe]").forEach(row => {
-        row.hidden = !transcribeVisible[row.dataset.showTranscribe];
-      });
-
-      const translator = document.getElementById("translator-service").value;
-      document.querySelectorAll("[data-show-translator]").forEach(row => {
-        row.hidden = !((row.dataset.showTranslator === "llm" && translator.includes("LLM")) || (row.dataset.showTranslator === "deeplx" && translator.includes("DeepLx")));
-      });
-
-      const dubbing = document.getElementById("dubbing-provider").value;
-      const needsDubbingApi = !dubbing.includes("Edge");
-      const supportsClone = dubbing.includes("SiliconFlow");
-      document.querySelectorAll("[data-show-dubbing]").forEach(row => {
-        row.hidden = !((row.dataset.showDubbing === "api" && needsDubbingApi) || (row.dataset.showDubbing === "clone" && supportsClone));
-      });
-      document.getElementById("dubbing-base").textContent = dubbing.includes("Gemini") ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.siliconflow.cn/v1";
-      document.getElementById("dubbing-model").innerHTML = dubbing.includes("Gemini") ? "<option>gemini-3.1-flash-tts-preview</option><option>gemini-2.5-flash-preview-tts</option>" : "<option>FunAudioLLM/CosyVoice2-0.5B</option>";
-      document.getElementById("dubbing-voice").innerHTML = dubbing.includes("Gemini") ? "<option>Achird · gemini-en-friendly</option><option>Kore · gemini-en-neutral</option><option>Puck · gemini-en-upbeat</option>" : dubbing.includes("SiliconFlow") ? "<option>Anna · siliconflow-cn-female</option><option>Alex · siliconflow-cn-male</option><option>Bella · siliconflow-cn-bella</option>" : "<option>晓晓 · edge-cn-female</option><option>云希 · edge-cn-male</option><option>晓伊 · edge-cn-xiaoyi</option>";
-
-      const llm = document.getElementById("llm-provider").value;
-      document.querySelectorAll("[data-show-llm]").forEach(row => row.hidden = row.dataset.showLlm !== llm);
-      const bases = {
-        "OpenAI 兼容": "https://api.openai.com/v1",
-        "SiliconCloud": "https://api.siliconflow.cn/v1",
-        "DeepSeek": "https://api.deepseek.com/v1",
-        "Ollama": "http://localhost:11434/v1",
-        "LM Studio": "http://localhost:1234/v1",
-        "Gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "ChatGLM": "https://open.bigmodel.cn/api/paas/v4"
-      };
-      document.getElementById("llm-base").textContent = bases[llm] || bases["OpenAI 兼容"];
-      document.getElementById("llm-key").textContent = llm === "Ollama" ? "ollama" : llm === "LM Studio" ? "lm-studio" : "sk-••••••••••••";
-    }
-
-    navItems.forEach(item => item.addEventListener("click", () => showPage(item.dataset.page)));
-    ["transcribe-model", "translator-service", "dubbing-provider", "llm-provider"].forEach(id => {
-      document.getElementById(id).addEventListener("change", updateConditionalRows);
-    });
-    const params = new URLSearchParams(location.search);
-    if (params.get("transcribe") === "whisper") {
-      document.getElementById("transcribe-model").value = "Whisper [API]";
-    }
-    if (params.get("transcribe") === "funasr") {
-      document.getElementById("transcribe-model").value = "百炼 Fun-ASR";
-    }
-    if (params.get("transcribe") === "whispercpp") {
-      document.getElementById("transcribe-model").value = "WhisperCpp";
-    }
-    if (params.get("transcribe") === "faster") {
-      document.getElementById("transcribe-model").value = "FasterWhisper";
-    }
-    if (params.get("transcribe") === "bijian") {
-      document.getElementById("transcribe-model").value = "B 接口";
-    }
-    if (params.get("translator") === "llm") {
-      document.getElementById("translator-service").value = "LLM 大模型翻译";
-    }
-    if (params.get("translator") === "deeplx") {
-      document.getElementById("translator-service").value = "DeepLx 翻译";
-    }
-    if (params.get("dubbing") === "gemini") {
-      document.getElementById("dubbing-provider").value = "Gemini TTS";
-    }
-    if (params.get("dubbing") === "siliconflow") {
-      document.getElementById("dubbing-provider").value = "SiliconFlow CosyVoice";
-    }
-    if (params.get("llm")) {
-      document.getElementById("llm-provider").value = params.get("llm");
-    }
-
-    showPage(location.hash.replace("#", "") || "transcribe", false);
-    updateConditionalRows();
-    requestAnimationFrame(() => window.scrollTo(0, 0));
-  </script>
+    </article>
+  </main>
 </body>
 </html>

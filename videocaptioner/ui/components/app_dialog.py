@@ -44,6 +44,7 @@ class AppDialog(MaskDialogBase):
         super().__init__(parent.window() if parent is not None else None)
         self.setShadowEffect(60, (0, 8), QColor(0, 0, 0, 100))
         self.setMaskColor(QColor(0, 0, 0, 150))
+        self.setClosableOnMaskClicked(True)  # 点遮罩空白处关闭（等同取消/Esc）
         # MaskDialogBase 默认把 widget 拉伸占满遮罩，卡片必须居中按内容收身
         self._hBoxLayout.setAlignment(self.widget, Qt.AlignCenter)  # type: ignore[arg-type]
 

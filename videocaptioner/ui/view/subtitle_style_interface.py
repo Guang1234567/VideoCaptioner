@@ -199,6 +199,14 @@ class SubtitleStyleInterface(QWidget):
 
         self._loading = False  # 程序化更新控件时抑制自动保存
         self._mode_key = self._renderer_key()  # 当前渲染模式的唯一真源（不依赖控件状态）
+        # 每个渲染模式各记住最近选中的样式 id：切到另一模式再切回时据此还原。
+        # subtitle_style_name 只存一份，否则切模式往返会把本模式的选择丢回内置默认，
+        # 下一次编辑又把内置 fork 成新样式，导致样式越积越多。
+        self._mode_style: dict[str, str] = {
+            self._mode_key: normalize_style_id(
+                cfg.subtitle_style_name.value, self._mode_key
+            )
+        }
         self._orientation = "横屏"
         self._preview_threads: list[QThread] = []
         self._preview_generation = 0
@@ -595,6 +603,11 @@ class SubtitleStyleInterface(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
 
+    def _set_current_style(self, style_id: str):
+        """提交当前模式选中的样式：写配置 + 记住该模式的选择（切模式往返可还原）。"""
+        self._mode_style[self._mode_key] = style_id
+        cfg.set(cfg.subtitle_style_name, style_id)
+
     def _refresh_style_list(self):
         """重建样式卡（仅在新增/复制/重命名/删除/切换模式时调用，点选切换不重建）。"""
         self._clear_dock_cards()
@@ -604,7 +617,11 @@ class SubtitleStyleInterface(QWidget):
         styles.sort(key=lambda s: (s.id != f"{key}/default", s.source.value, s.short_id))
         self.countChip.setText(self.tr("共 {} 套").format(len(styles)))
 
-        active_id = normalize_style_id(cfg.subtitle_style_name.value, key)
+        # 优先用本模式记住的选择；它若属于另一模式（normalize 仍带原前缀）则解析不到，
+        # 回退到该模式首张卡（内置默认），而不会污染另一模式的记忆。
+        active_id = self._mode_style.get(key) or normalize_style_id(
+            cfg.subtitle_style_name.value, key
+        )
         active_preset = next((s for s in styles if s.id == active_id), None)
         if active_preset is None:
             active_preset = styles[0] if styles else None
@@ -631,7 +648,7 @@ class SubtitleStyleInterface(QWidget):
         self.trackBody.setMinimumWidth(content_w)
 
         if active_preset is not None:
-            cfg.set(cfg.subtitle_style_name, active_preset.id)
+            self._set_current_style(active_preset.id)
             self._load_into_controls(active_preset)
             self.update_preview()
         self._scroll_card_into_view(active_card)
@@ -671,7 +688,7 @@ class SubtitleStyleInterface(QWidget):
         preset = load_style(style_id, renderer=key)
         if preset is None:
             return
-        cfg.set(cfg.subtitle_style_name, preset.id)
+        self._set_current_style(preset.id)
         active_card = None
         for card in self._cards:
             card.setActive(card.style_id == preset.id)
@@ -813,11 +830,18 @@ class SubtitleStyleInterface(QWidget):
         current_id = normalize_style_id(cfg.subtitle_style_name.value, self._mode_key)
         preset = load_style(current_id, renderer=self._mode_key)
         if preset is not None and preset.source == StyleSource.BUILTIN:
-            # 内置只读：fork 成用户样式后再保存到那里（带上"· 自定义"的可读名）
-            new_id = self._unique_user_id(preset)
-            name = f"{preset.name} · {self.tr('自定义')}"
-            save_user_style(self._preset_from_controls(new_id, name))
-            cfg.set(cfg.subtitle_style_name, new_id)
+            # 内置只读：编辑即派生出该内置「唯一」的「· 自定义」影子样式。
+            # 用确定性 id（不递增 -custom-N）：已存在就复用并更新，避免每次
+            # 选择被重置回内置后又新建一个，导致样式越积越多。
+            fork_id = f"{self._mode_key}/{preset.short_id}-custom"
+            existing = load_style(fork_id, renderer=self._mode_key)
+            name = (
+                existing.name
+                if existing is not None and existing.source == StyleSource.USER
+                else f"{preset.name} · {self.tr('自定义')}"
+            )
+            save_user_style(self._preset_from_controls(fork_id, name))
+            self._set_current_style(fork_id)
             self._refresh_style_list()
             return
         # 已是用户样式：保留其显示名，只更新参数
@@ -848,7 +872,7 @@ class SubtitleStyleInterface(QWidget):
             return
         style_id = self._new_user_id(name)
         save_user_style(self._preset_from_controls(style_id, name))
-        cfg.set(cfg.subtitle_style_name, style_id)
+        self._set_current_style(style_id)
         self._refresh_style_list()
         self._toast(self.tr("已创建样式「{}」").format(name))
 
@@ -865,7 +889,7 @@ class SubtitleStyleInterface(QWidget):
             style=preset.style,
         )
         save_user_style(copy)
-        cfg.set(cfg.subtitle_style_name, new_id)
+        self._set_current_style(new_id)
         self._refresh_style_list()
         self._toast(self.tr("已复制为「{}」").format(copy.name))
 
@@ -897,7 +921,7 @@ class SubtitleStyleInterface(QWidget):
         if not dialog.exec():
             return
         delete_user_style(style_id)
-        cfg.set(cfg.subtitle_style_name, f"{self._mode_key}/default")
+        self._set_current_style(f"{self._mode_key}/default")
         self._refresh_style_list()
         self._toast(self.tr("样式已删除"))
 

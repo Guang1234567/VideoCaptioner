@@ -586,13 +586,34 @@ class ASRData:
         )
         blocks = re.split(r"\n\s*\n", srt_str.strip())
 
-        # Detect bilingual mode: all 4-line + 70% different languages
+        # Detect bilingual mode: all 4-line + 70% different languages.
+        #
+        # 性能：langdetect 首次调用要加载磁盘语言库(~200ms)，且每块原来调两次 detect，
+        # 上百次叠加会卡住 UI 线程（用户反馈"投入字幕后隔一会才加载"）。绝大多数双语字幕是
+        # 中↔英，用一个便宜的脚本类判定（含 CJK / 含拉丁）就能区分，零 langdetect 开销；
+        # 只有同为拉丁脚本(如 en↔ru)分不出时才退回 detect。
+        def _script_class(text: str) -> str:
+            has_cjk = any(
+                "一" <= ch <= "鿿"  # 汉字
+                or "぀" <= ch <= "ヿ"  # 假名
+                or "가" <= ch <= "힣"  # 谚文
+                for ch in text
+            )
+            if has_cjk:
+                return "cjk"
+            return "latin" if any(ch.isalpha() for ch in text) else "other"
+
         def is_different_lang(block: str) -> bool:
             lines = block.splitlines()
             if len(lines) != 4:
                 return False
+            top, bottom = lines[2], lines[3]
+            ct, cb = _script_class(top), _script_class(bottom)
+            if ct == "cjk" or cb == "cjk":
+                # 任一含 CJK：脚本类不同即判为不同语种（覆盖主力中↔英/日/韩双语），不碰 langdetect
+                return ct != cb
             try:
-                return detect(lines[2]) != detect(lines[3])
+                return detect(top) != detect(bottom)
             except LangDetectException:
                 return False
 

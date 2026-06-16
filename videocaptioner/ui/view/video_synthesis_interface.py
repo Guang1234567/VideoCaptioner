@@ -1474,12 +1474,7 @@ class VideoSynthesisInterface(QWidget):
     def _open_synthesis_settings(self):
         window = self.window()
         if hasattr(window, "openSettingsPage"):
-            if window.openSettingsPage("subtitle") is not False:  # type: ignore[attr-defined]
-                return
-        setting_interface = getattr(window, "settingInterface", None)
-        if setting_interface is not None and hasattr(window, "switchTo"):
-            if setting_interface.setCurrentPage("subtitle"):
-                window.switchTo(setting_interface)  # type: ignore[attr-defined]
+            window.openSettingsPage("subtitle")  # type: ignore[attr-defined]
 
     def _open_voice_library(self):
         window = self.window()

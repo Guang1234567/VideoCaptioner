@@ -370,11 +370,8 @@ class StyleCard(QFrame):
         self.syncStyle()
 
     def setActive(self, active: bool):
+        # 选中由卡片描边（paintEvent）表达，不改写标签——保留「我的 / 内置」原始 tag 不变
         self._active = active
-        self.sourcePill.setState(
-            self.tr("当前") if active else (self.tr("我的") if self._editable else self.tr("内置")),
-            "ok" if active else "neutral",
-        )
         self.update()
 
     def isActive(self) -> bool:
