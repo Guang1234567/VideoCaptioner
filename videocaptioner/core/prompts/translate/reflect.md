@@ -83,6 +83,7 @@ Based on your analysis, rewrite the translation to sound completely natural in $
 - Use natural expressions for the context and audience
 - Match appropriate formality level
 - For Chinese: Use 成语/俗语/网络用语 when naturally fitting
+- For Chinese translations, always add a space between Chinese characters and adjacent English/numbers/code symbols in the final `native_translation` output.
 
 Goal: Natural speech, not machine translation text.
 </key_principles>
