@@ -1,0 +1,41 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Attach (监听终端)",
+            "type": "debugpy",
+            "request": "attach",
+            "connect": {
+                "host": "localhost",
+                "port": 7788
+            }
+        },
+                {
+            "name": "Python: VideoCaptioner GUI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "videocaptioner.ui.main",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        },
+        {
+            "name": "Python: VideoCaptioner CLI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "videocaptioner.cli.main",
+            "args": [
+                "subtitle",
+                "--verbose",
+                "--help"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}

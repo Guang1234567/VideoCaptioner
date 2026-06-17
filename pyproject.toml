@@ -108,6 +108,7 @@ dev = [
     "modelscope>=1.32.0",
     "psutil>=7.0.0",
     "GPUtil>=1.4.0",
+    "debugpy>=1.8.21",
 ]
 
 [tool.pyright]

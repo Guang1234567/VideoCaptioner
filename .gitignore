@@ -12,7 +12,7 @@ venv/
 
 # IDE
 .idea/
-.vscode/
+#.vscode/
 
 # OS
 .DS_Store
